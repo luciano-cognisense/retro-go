@@ -7,7 +7,17 @@
 #define RG_STORAGE_SDSPI_SPEED      SDMMC_FREQ_DEFAULT
 // #define RG_STORAGE_SDMMC_HOST       SDMMC_HOST_SLOT_1
 // #define RG_STORAGE_SDMMC_SPEED      SDMMC_FREQ_DEFAULT
+<<<<<<< Updated upstream
 // #define RG_STORAGE_FLASH_PARTITION  "vfs"
+=======
+// #define RG_GPIO_SDMMC_CMD           GPIO_NUM_15
+// #define RG_GPIO_SDMMC_CLK           GPIO_NUM_14
+// #define RG_GPIO_SDMMC_D0            GPIO_NUM_2
+// #define RG_GPIO_SDMMC_D1            GPIO_NUM_NC
+// #define RG_GPIO_SDMMC_D2            GPIO_NUM_NC
+// #define RG_GPIO_SDMMC_D3            GPIO_NUM_NC
+#define RG_STORAGE_FLASH_PARTITION  "vfs"
+>>>>>>> Stashed changes
 
 // Audio
 #define RG_AUDIO_USE_INT_DAC        0   // 0 = Disable, 1 = GPIO25, 2 = GPIO26, 3 = Both
@@ -46,25 +56,35 @@
 
 // Input
 // Refer to rg_input.h to see all available RG_KEY_* and RG_GAMEPAD_*_MAP types
-#define RG_GAMEPAD_ADC_MAP {\
+/*#define RG_GAMEPAD_ADC_MAP {\
     {RG_KEY_UP,    ADC_UNIT_1, ADC_CHANNEL_5, ADC_ATTEN_DB_11, 3072, 4096},\
     {RG_KEY_RIGHT, ADC_UNIT_1, ADC_CHANNEL_6, ADC_ATTEN_DB_11, 1024, 3071},\
     {RG_KEY_DOWN,  ADC_UNIT_1, ADC_CHANNEL_5, ADC_ATTEN_DB_11, 1024, 3071},\
     {RG_KEY_LEFT,  ADC_UNIT_1, ADC_CHANNEL_6, ADC_ATTEN_DB_11, 3072, 4096},\
-}
+}*/
 #define RG_GAMEPAD_GPIO_MAP {\
     {RG_KEY_SELECT, .num = GPIO_NUM_16, .pullup = 1, .level = 0},\
     {RG_KEY_START,  .num = GPIO_NUM_17, .pullup = 1, .level = 0},\
-    {RG_KEY_MENU,   .num = GPIO_NUM_18, .pullup = 1, .level = 0},\
-    {RG_KEY_OPTION, .num = GPIO_NUM_8,  .pullup = 1, .level = 0},\
-    {RG_KEY_A,      .num = GPIO_NUM_15, .pullup = 1, .level = 0},\
-    {RG_KEY_B,      .num = GPIO_NUM_5,  .pullup = 1, .level = 0},\
+    {RG_KEY_Y,      .num = GPIO_NUM_18, .pullup = 1, .level = 0},\
+    {RG_KEY_X,      .num = GPIO_NUM_8,  .pullup = 1, .level = 0},\
+    {RG_KEY_A,      .num = GPIO_NUM_14, .pullup = 1, .level = 0},\
+    {RG_KEY_B,      .num = GPIO_NUM_19, .pullup = 1, .level = 0},\
+    {RG_KEY_UP,     .num = GPIO_NUM_20, .pullup = 1, .level = 0},\
+    {RG_KEY_RIGHT,  .num = GPIO_NUM_21, .pullup = 1, .level = 0},\
+    {RG_KEY_DOWN,   .num = GPIO_NUM_45, .pullup = 1, .level = 0},\
+    {RG_KEY_LEFT,   .num = GPIO_NUM_46, .pullup = 1, .level = 0},\
+}
+
+// Combos virtuais: MENU = START+SELECT, OPTION = START+UP
+#define RG_GAMEPAD_VIRT_MAP {\
+    {RG_KEY_MENU,   RG_KEY_SELECT | RG_KEY_UP},\
+    {RG_KEY_OPTION, RG_KEY_SELECT | RG_KEY_DOWN},\
 }
 
 // Battery
 #define RG_BATTERY_DRIVER           1
 #define RG_BATTERY_ADC_UNIT         ADC_UNIT_1
-#define RG_BATTERY_ADC_CHANNEL      ADC_CHANNEL_3
+#define RG_BATTERY_ADC_CHANNEL      ADC_CHANNEL_4
 #define RG_BATTERY_CALC_PERCENT(raw) (((raw) * 2.f - 3500.f) / (4200.f - 3500.f) * 100.f)
 #define RG_BATTERY_CALC_VOLTAGE(raw) ((raw) * 2.f * 0.001f)
 

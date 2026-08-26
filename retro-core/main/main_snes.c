@@ -13,6 +13,17 @@ typedef struct
 	} keys[16];
 } keymap_t;
 
+<<<<<<< Updated upstream:retro-core/main/main_snes.c
+=======
+enum {
+    KEYMAP_TYPE_A = 0,
+    KEYMAP_TYPE_B,
+    KEYMAP_TYPE_C,
+    KEYMAP_TYPE_D,
+    KEYMAP_REGULAR = KEYMAP_TYPE_D  // aponta para Type D que tem X e Y físicos
+};
+
+>>>>>>> Stashed changes:snes9x/main/main_snes.c
 static const keymap_t KEYMAPS[] = {
 	{"Type A", {
 		{SNES_A_MASK, RG_KEY_A, 0},
@@ -56,6 +67,25 @@ static const keymap_t KEYMAPS[] = {
 		{SNES_LEFT_MASK, RG_KEY_LEFT, 0},
 		{SNES_RIGHT_MASK, RG_KEY_RIGHT, 0},
 	}},
+<<<<<<< Updated upstream:retro-core/main/main_snes.c
+=======
+    // NOVO: Type D — para hardware com botões X e Y físicos (GPIO8 e GPIO18)
+    [KEYMAP_TYPE_D] = {"Type D", {
+        {SNES_B_MASK,      RG_KEY_B,      0},           // B físico → SNES B
+        {SNES_A_MASK,      RG_KEY_A,      0},           // A físico → SNES A
+        {SNES_Y_MASK,      RG_KEY_Y,      0},           // Y físico (GPIO18) → SNES Y
+        {SNES_X_MASK,      RG_KEY_X,      0},           // X físico (GPIO8)  → SNES X
+        {SNES_TL_MASK,     RG_KEY_B,      RG_KEY_SELECT}, // L = SELECT + B
+        {SNES_TR_MASK,     RG_KEY_A,      RG_KEY_SELECT}, // R = SELECT + A
+        {SNES_START_MASK,  RG_KEY_START,  0},           // START físico → SNES START
+        {SNES_SELECT_MASK, RG_KEY_SELECT, 0},           // SELECT físico → SNES SELECT
+        {SNES_UP_MASK,     RG_KEY_UP,     0},
+        {SNES_DOWN_MASK,   RG_KEY_DOWN,   0},
+        {SNES_LEFT_MASK,   RG_KEY_LEFT,   0},
+        {SNES_RIGHT_MASK,  RG_KEY_RIGHT,  0},
+    }},
+
+>>>>>>> Stashed changes:snes9x/main/main_snes.c
 };
 
 static const size_t KEYMAPS_COUNT = (sizeof(KEYMAPS) / sizeof(keymap_t));

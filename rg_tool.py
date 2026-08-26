@@ -18,12 +18,23 @@ DEFAULT_APPS = os.getenv("RG_TOOL_APPS", "launcher retro-core prboom-go gwenesis
 PROJECT_NAME = os.getenv("PROJECT_NAME", "Retro-Go")
 PROJECT_ICON = os.getenv("PROJECT_ICON", "assets/icon.raw")
 PROJECT_APPS = {
+<<<<<<< Updated upstream
   # Project name  Type, SubType, Size
   'launcher':     [0, 16, 1048576],
   'retro-core':   [0, 16, 1048576],
   'prboom-go':    [0, 16, 786432],
   'gwenesis':     [0, 16, 1048576],
   'fmsx':         [0, 16, 589824],
+=======
+  'updater':      [0, 0,  393216],
+  'launcher':     [0, 16, 1245184],
+  'retro-core':   [0, 16,  917504],
+  'prboom-go':    [0, 16,  851968],
+  'snes9x':       [0, 16,  720896],
+  'gwenesis':     [0, 16, 1114112],
+  'fmsx':         [0, 16,  655360],
+  'gbsp':         [0, 16,  851968],
+>>>>>>> Stashed changes
 }
 # PROJECT_APPS = {}
 # for t in glob.glob("*/CMakeLists.txt"):
