@@ -19,14 +19,16 @@ PROJECT_NAME = os.getenv("PROJECT_NAME", "Retro-Go")
 PROJECT_ICON = os.getenv("PROJECT_ICON", "assets/icon.raw")
 PROJECT_APPS = {
   # Project name  Type, SubType, Size
+  # Tamanhos do firmware de referencia v1a (Hands On Lab).
+  # Os quatro apps gravados no kit tem +64KB de folga (+128KB no launcher).
   'updater':      [0, 0,  393216],
-  'launcher':     [0, 16, 1048576],
-  'retro-core':   [0, 16, 851968],
-  'prboom-go':    [0, 16, 851968],
-  'snes9x':       [0, 16, 655360],
-  'gwenesis':     [0, 16, 1048576],
-  'fmsx':         [0, 16, 655360],
-  'gbsp':         [0, 16, 851968],
+  'launcher':     [0, 16, 1245184],
+  'retro-core':   [0, 16,  917504],
+  'prboom-go':    [0, 16,  851968],
+  'snes9x':       [0, 16,  720896],
+  'gwenesis':     [0, 16, 1114112],
+  'fmsx':         [0, 16,  655360],
+  'gbsp':         [0, 16,  851968],
 }
 # PROJECT_APPS = {}
 # for t in glob.glob("*/CMakeLists.txt"):
