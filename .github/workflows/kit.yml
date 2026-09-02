@@ -1,0 +1,101 @@
+name: firmware do kit
+
+# Compila o firmware do Hands On Lab e publica a imagem de 16 MB pronta para o
+# flasher. Roda a cada push e também sob demanda.
+#
+# Por que existe separado do ci.yml: aquele compila o alvo odroid-go pelo
+# Dockerfile, que é o alvo de referência do projeto upstream. Este compila o
+# **nosso** alvo, com a **nossa** lista de apps e o **nosso** tamanho de
+# partição de dados — e é a saída dele que vai para o aparelho.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "**" ]
+
+env:
+  # Os quatro apps do firmware de referência v1a, nesta ordem — ela define os
+  # slots ota_0..ota_3 da tabela de partições.
+  APPS: "launcher retro-core snes9x gwenesis"
+  # A partição de dados, em bytes. Este número não é escolha: é o que a imagem
+  # que já está nos kits usa. Mudá-lo muda a tabela de partições, e aí um kit
+  # atualizado perde os jogos que o dono guardou nela.
+  FATSIZE: "12697600"
+  TARGET: "esp32-s3-devkit"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # A mesma linha de esp-idf que gerou o firmware de referência (v5.3.1).
+    container: espressif/idf:release-v5.3
+
+    steps:
+      - name: Baixar o repositório
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # o rg_tool usa `git describe` para a versão
+
+      - name: Liberar o git dentro do contêiner
+        run: git config --global --add safe.directory '*'
+
+      - name: Aplicar os patches do retro-go no esp-idf
+        shell: bash
+        run: |
+          cd /opt/esp/idf
+          patch --ignore-whitespace -p1 -i "$GITHUB_WORKSPACE/tools/patches/panic-hook (esp-idf 5).diff"
+          patch --ignore-whitespace -p1 -i "$GITHUB_WORKSPACE/tools/patches/sdcard-fix (esp-idf 5).diff"
+
+      - name: Compilar e montar a imagem
+        shell: bash
+        run: |
+          . /opt/esp/idf/export.sh
+          python rg_tool.py --target="$TARGET" --fatsize="$FATSIZE" build-img $APPS
+
+      - name: Conferir se cada app coube na sua partição
+        shell: bash
+        run: |
+          set -e
+          python - <<'PY'
+          import os, sys
+          # Os tamanhos vêm do rg_tool.py, que é a fonte da verdade do projeto.
+          import importlib.util
+          spec = importlib.util.spec_from_file_location("rg", "rg_tool.py")
+          # rg_tool.py roda argparse ao ser importado, então leio a tabela na mão.
+          tabela = {}
+          for linha in open("rg_tool.py"):
+              linha = linha.strip()
+              if linha.startswith("'") and "[" in linha and "]" in linha:
+                  nome = linha.split("'")[1]
+                  nums = linha[linha.index("[")+1:linha.index("]")].split(",")
+                  tabela[nome] = int(nums[2])
+          falhou = False
+          for app in os.environ["APPS"].split():
+              caminho = os.path.join(app, "build", app + ".bin")
+              tam = os.path.getsize(caminho)
+              lim = tabela[app]
+              uso = 100.0 * tam / lim
+              print(f"{app:<12} {tam:>8} / {lim:>8} bytes  ({uso:.1f}%)")
+              if tam > lim:
+                  print(f"  ERRO: {app} passou da partição em {tam-lim} bytes")
+                  falhou = True
+          sys.exit(1 if falhou else 0)
+          PY
+
+      - name: Publicar a imagem
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-hands-on-lab
+          path: "*.img"
+          if-no-files-found: error
+
+      - name: Publicar os apps soltos
+        # Úteis para atualizar só uma partição pelo OTA, sem regravar os 16 MB.
+        uses: actions/upload-artifact@v4
+        with:
+          name: apps
+          path: |
+            launcher/build/launcher.bin
+            retro-core/build/retro-core.bin
+            snes9x/build/snes9x.bin
+            gwenesis/build/gwenesis.bin
+          if-no-files-found: error
