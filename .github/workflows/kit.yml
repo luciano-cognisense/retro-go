@@ -41,9 +41,46 @@ jobs:
       - name: Aplicar os patches do retro-go no esp-idf
         shell: bash
         run: |
+          set -euo pipefail
           cd /opt/esp/idf
-          patch --ignore-whitespace -p1 -i "$GITHUB_WORKSPACE/tools/patches/panic-hook (esp-idf 5).diff"
-          patch --ignore-whitespace -p1 -i "$GITHUB_WORKSPACE/tools/patches/sdcard-fix (esp-idf 5).diff"
+          P="$GITHUB_WORKSPACE/tools/patches"
+
+          # Os dois patches do retro-go foram escritos para o esp-idf 5.1 (a
+          # versão do Dockerfile do projeto). Aqui rodamos no 5.3, que é a linha
+          # que gerou o firmware de referência do kit — e entre uma e outra o
+          # código andou de lugar. Por isso os patches não podem ser aplicados
+          # às cegas.
+
+          # 1) Gancho de panic. O arquivo continua em components/esp_system/,
+          #    só mudou de linha: aplica com fuzz. O grep depois confirma que
+          #    entrou — sem ele, um patch que virasse no-op passaria batido.
+          patch --ignore-whitespace --forward -p1 -i "$P/panic-hook (esp-idf 5).diff"
+          grep -q 'esp_panic_putchar_hook' components/esp_system/panic.c
+
+          # 2) Correção do cartão SD. Do 5.2 em diante o driver SPI do SD saiu
+          #    de components/driver/spi/sdspi/ para o componente próprio
+          #    components/esp_driver_sdspi/src/. É o mesmo arquivo em outro
+          #    caminho, então localizamos onde ele está e reescrevemos os
+          #    cabeçalhos do diff. O diff original também termina no meio da
+          #    linha (sem \n no fim), o que o `patch` recusa — daí o echo.
+          ALVO=$(find components -name sdspi_host.c | head -n 1)
+          if [ -z "$ALVO" ]; then
+            echo "AVISO: sdspi_host.c não existe nesta versão do esp-idf; patch do SD ignorado."
+          elif ! grep -q 'go_idle_clockout' "$ALVO"; then
+            # A função que o patch chama sumiu. Aplicar assim quebraria a
+            # compilação, e este patch é um contorno de estabilidade do cartão
+            # SD, não um requisito de build. Melhor seguir sem ele e dizer.
+            echo "AVISO: go_idle_clockout não existe mais em $ALVO; patch do SD ignorado."
+          else
+            echo "sdspi_host.c encontrado em: $ALVO"
+            sed -e "s#^diff --git .*#diff --git a/$ALVO b/$ALVO#" \
+                -e "s#^--- a/.*sdspi_host\.c#--- a/$ALVO#" \
+                -e "s#^+++ b/.*sdspi_host\.c#+++ b/$ALVO#" \
+                "$P/sdcard-fix (esp-idf 5).diff" > /tmp/sdcard-fix.diff
+            echo >> /tmp/sdcard-fix.diff
+            patch --ignore-whitespace --forward -p1 -i /tmp/sdcard-fix.diff
+            grep -q 'go_idle_clockout(slot);' "$ALVO"
+          fi
 
       - name: Compilar e montar a imagem
         shell: bash
