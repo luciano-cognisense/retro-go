@@ -55,12 +55,11 @@ jobs:
         shell: bash
         run: |
           set -e
-          python - <<'PY'
+          python3 - <<'PY'
           import os, sys
           # Os tamanhos vêm do rg_tool.py, que é a fonte da verdade do projeto.
-          import importlib.util
-          spec = importlib.util.spec_from_file_location("rg", "rg_tool.py")
-          # rg_tool.py roda argparse ao ser importado, então leio a tabela na mão.
+          # Importar o arquivo não dá: ele roda argparse ao ser carregado. Então
+          # a tabela é lida como texto.
           tabela = {}
           for linha in open("rg_tool.py"):
               linha = linha.strip()
