@@ -52,6 +52,16 @@ typedef struct {
 
     uint64_t ciclos;
 
+    // Color clocks que a CPU já consumiu e a TIA ainda não desenhou.
+    //
+    // A TIA só precisa estar em dia quando alguém olha para ela: uma leitura
+    // ou escrita nos registradores dela, o WSYNC soltando a CPU, ou a escrita
+    // pendente que vale no color clock seguinte. Fora disso — código de lógica
+    // rodando na RAM, tabelas sendo lidas da ROM — dá para acumular e desenhar
+    // um trecho grande de uma vez, que é o que faz a varredura por trecho valer
+    // a pena. Ver `sincroniza` em a26.c.
+    int      pendente;
+
     // Som. A TIA produz duas amostras por linha de varredura — cerca de 31,4
     // kHz em NTSC. Elas são acumuladas aqui durante o quadro e reamostradas na
     // saída para a taxa que o aparelho usa.

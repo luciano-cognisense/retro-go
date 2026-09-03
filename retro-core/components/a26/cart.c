@@ -120,7 +120,11 @@ static void hotspot(cart_t *c, uint16_t a)
 // Função pura do estado do cartucho — é ela que a suíte de teste compara com
 // um modelo independente.
 //
-size_t cart_offset(const cart_t *c, uint16_t a)
+// A implementação fica estática para o compilador embuti-la em `cart_read`:
+// são 6,6 milhões de chamadas por segundo de jogo, e o prólogo aparecia no
+// perfil. `cart_offset` continua exportada para o teste comparar o mapeamento
+// com o modelo independente.
+static size_t offset_interno(const cart_t *c, uint16_t a)
 {
     uint16_t off = (uint16_t)(a & MASCARA);
 
@@ -153,6 +157,11 @@ size_t cart_offset(const cart_t *c, uint16_t a)
     }
 }
 
+size_t cart_offset(const cart_t *c, uint16_t a)
+{
+    return offset_interno(c, a);
+}
+
 // -------------------------------------------------------------- interface
 
 uint8_t cart_read(cart_t *c, uint16_t addr)
@@ -163,7 +172,7 @@ uint8_t cart_read(cart_t *c, uint16_t addr)
     if (i >= 0)
         return c->ram[i];
 
-    size_t p = cart_offset(c, addr);
+    size_t p = offset_interno(c, addr);
     return (p < c->tam) ? c->rom[p] : 0xFF;
 }
 
@@ -360,6 +369,9 @@ bool cart_load_tipo(cart_t *c, const uint8_t *rom, size_t tam,
     c->tipo = tipo;
     c->superchip = superchip && (tipo == CART_F8 || tipo == CART_F6 ||
                                  tipo == CART_F4);
+    // Oito dos dez esquemas ignoram o barramento. Marcar aqui evita uma chamada
+    // de função em cada acesso da CPU — sao 8,5 milhoes por segundo de jogo.
+    c->escuta = (tipo == CART_3F || tipo == CART_FE);
     cart_reset(c);
     return true;
 }

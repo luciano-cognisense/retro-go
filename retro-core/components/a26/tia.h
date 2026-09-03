@@ -115,6 +115,10 @@ typedef struct {
     int      fb_linhas;
     uint8_t *fb_linha;        // linha corrente, ou NULL fora da janela
 
+    // Pixel em que o RESPx foi disparado, na linha corrente, ou -1 se o
+    // disparo foi numa linha anterior. Ver `copia_vale`.
+    int16_t  pos_strobe_x[5];
+
     uint16_t lines_in_frame;  // linhas do último quadro fechado
 
     // Cache do compositor.
@@ -140,6 +144,20 @@ typedef struct {
         uint8_t  ini_p[2][3];  // início de cada cópia, 0..159
         uint8_t  ini_m[2][3];
         uint8_t  ini_bl;
+
+        // Memo do padrão expandido. Refazer os 8 a 32 bits do jogador custa um
+        // laço, e o cache inteiro é invalidado a cada escrita na TIA — inclusive
+        // por escritas que não têm nada a ver com o gráfico, como COLUBK. Estes
+        // três dizem para que valores o padrão já foi montado.
+        uint8_t  memo_grp[2];
+        uint8_t  memo_nusiz[2];
+        uint8_t  memo_refp[2];
+
+        // Onde, nos 160 pixels da linha, algum objeto móvel pode aparecer.
+        // É um superconjunto: uma cópia que o RESPx suprimiu continua marcada.
+        // Serve só para o compositor saber onde NÃO precisa olhar — e é onde
+        // está a maior parte da linha na maioria dos jogos.
+        uint32_t ocupado[5];
     } cache;
     bool cache_sujo;
 } tia_t;

@@ -68,14 +68,34 @@ static void avanca_n(a26_t *c, int n)
     }
 }
 
+// Põe a TIA em dia com o que a CPU já gastou.
+static void sincroniza(a26_t *c)
+{
+    if (c->pendente > 0) {
+        int n = c->pendente;
+        c->pendente = 0;
+        avanca_n(c, n);
+    }
+}
+
 static void avanca(a26_t *c)
 {
-    // WSYNC: a CPU fica parada até o fim da linha.
-    while (!c->tia.rdy)
-        avanca_n(c, TIA_CLOCKS_PER_LINE - c->tia.clock);
+    // WSYNC: a CPU fica parada até o fim da linha. Não dá para adiar, porque é
+    // a própria TIA que diz quando soltar.
+    if (!c->tia.rdy) {
+        sincroniza(c);
+        while (!c->tia.rdy)
+            avanca_n(c, TIA_CLOCKS_PER_LINE - c->tia.clock);
+    }
 
-    avanca_n(c, 3);
+    c->pendente += 3;
     c->ciclos++;
+
+    // Uma escrita latchada no ciclo anterior vale no primeiro color clock
+    // deste. Adiar mudaria o momento em que ela surte efeito — e para o VSYNC
+    // isso mudaria onde o quadro é cortado.
+    if (c->tia.w_pend)
+        sincroniza(c);
 }
 
 static uint8_t ler(void *ctx, uint16_t addr)
@@ -85,15 +105,19 @@ static uint8_t ler(void *ctx, uint16_t addr)
     addr &= 0x1FFF;
 
     uint8_t v;
-    if (addr & 0x1000)
+    if (addr & 0x1000) {
         v = cart_read(&c->cart, addr);
-    else if (!(addr & 0x80))
+    } else if (!(addr & 0x80)) {
+        sincroniza(c);                     // os registradores de colisão
         v = tia_read(&c->tia, addr);
-    else
+    }
+    else {
         v = riot_read(&c->riot, addr & 0x2FF, c->ciclos);
+    }
 
     // O cartucho escuta o barramento inteiro: 3F e FE dependem disso.
-    cart_snoop(&c->cart, addr, v, false);
+    if (c->cart.escuta)
+        cart_snoop(&c->cart, addr, v, false);
     return v;
 }
 
@@ -103,14 +127,18 @@ static void escrever(void *ctx, uint16_t addr, uint8_t val)
     avanca(c);
     addr &= 0x1FFF;
 
-    if (addr & 0x1000)
+    if (addr & 0x1000) {
         cart_write(&c->cart, addr, val);   // é ROM, mas o hotspot vale
-    else if (!(addr & 0x80))
+    } else if (!(addr & 0x80)) {
+        sincroniza(c);                     // a escrita tem de cair no clock certo
         tia_write(&c->tia, addr, val);
-    else
+    }
+    else {
         riot_write(&c->riot, addr & 0x2FF, val, c->ciclos);
+    }
 
-    cart_snoop(&c->cart, addr, val, true);
+    if (c->cart.escuta)
+        cart_snoop(&c->cart, addr, val, true);
 }
 
 bool a26_load(a26_t *c, const uint8_t *rom, size_t tam)
@@ -202,6 +230,7 @@ int a26_run_frame(a26_t *c)
         if (c->cpu.jammed)
             break;
     }
+    sincroniza(c);                         // não deixa color clock pendurado
     c->linhas_no_quadro = c->tia.lines_in_frame;
     return c->audio_len;
 }

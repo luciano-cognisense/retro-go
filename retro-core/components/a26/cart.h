@@ -55,6 +55,7 @@ typedef struct {
     size_t   tam;
     cart_tipo_t tipo;
     bool     superchip;        // 128 B de RAM extra (F8SC, F6SC, F4SC)
+    bool     escuta;           // 3F e FE espiam o barramento; os outros oito, não
 
     uint8_t  banco;            // banco corrente, nos esquemas de banco único
     uint8_t  fatia[4];         // E0: a fatia em cada uma das 4 janelas de 1 KB
