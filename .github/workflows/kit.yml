@@ -135,3 +135,18 @@ jobs:
             snes9x/build/snes9x.bin
             gwenesis/build/gwenesis.bin
           if-no-files-found: error
+
+      - name: Publicar os .elf (para decifrar panics)
+        # O crash log do aparelho registra só endereços de retorno. Sem o .elf
+        # **desta mesma compilação** eles não viram nome de função nem linha de
+        # arquivo, e a análise vira adivinhação. O .elf não vai para o kit: é
+        # ferramenta de diagnóstico, e é barato guardar.
+        uses: actions/upload-artifact@v4
+        with:
+          name: simbolos
+          path: |
+            launcher/build/launcher.elf
+            retro-core/build/retro-core.elf
+            snes9x/build/snes9x.elf
+            gwenesis/build/gwenesis.elf
+          if-no-files-found: error

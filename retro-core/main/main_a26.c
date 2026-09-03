@@ -194,10 +194,19 @@ void a26_main(void)
     updates[1] = rg_surface_create(A26_LARGURA, A26_ALTURA, FB_PIXEL_FORMAT, MEM_FAST);
     currentUpdate = updates[0];
 
+    // Marcos de partida. O panic do aparelho entrega endereços de retorno, e
+    // sem o .elf casado isso não vira nome de função. Uma linha por etapa
+    // troca "travou em algum lugar da partida" por "travou entre a etapa N e
+    // a N+1". Custa microssegundos, então fica.
+    RG_LOGI("a26: superficies criadas");
+
     sistema_video = rg_settings_get_number(NS_APP, SETTING_SISTEMA, 0);
     dific_p0 = rg_settings_get_number(NS_APP, SETTING_DIFIC_P0, 0);
     dific_p1 = rg_settings_get_number(NS_APP, SETTING_DIFIC_P1, 0);
+    RG_LOGI("a26: opcoes lidas (sistema=%d dif=%d/%d)", sistema_video, dific_p0, dific_p1);
+
     aplica_paleta();
+    RG_LOGI("a26: paleta aplicada");
 
     // O cartucho guarda um ponteiro para a ROM em vez de copiá-la, então este
     // buffer tem de viver enquanto o emulador viver.
@@ -211,6 +220,7 @@ void a26_main(void)
     } else if (!rg_storage_read_file(app->romPath, (void **)&rom_data, &rom_size, 0)) {
         RG_PANIC("ROM file loading failed!");
     }
+    RG_LOGI("a26: rom lida (%d bytes)", (int)rom_size);
 
     memset(&console, 0, sizeof(console));
     a26_set_framebuffer(&console, currentUpdate->data, A26_LARGURA,
@@ -219,7 +229,10 @@ void a26_main(void)
     if (!a26_load(&console, rom_data, rom_size))
         RG_PANIC("Unsupported cartridge bankswitching scheme!");
 
-    RG_LOGI("Atari 2600: %zu bytes, esquema %s", rom_size, a26_esquema(&console));
+    // %zu não é usado de propósito: o alvo compila com CONFIG_NEWLIB_NANO_FORMAT,
+    // e a implementação reduzida de printf não cobre todos os modificadores de
+    // tamanho. Um int com cast explícito não depende disso.
+    RG_LOGI("a26: %d bytes, esquema %s", (int)rom_size, a26_esquema(&console));
 
     if (app->bootFlags & RG_BOOT_RESUME)
         rg_emu_load_state(app->saveSlot);

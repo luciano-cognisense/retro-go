@@ -1,69 +1,69 @@
-// paleta.c — geração das 128 cores da TIA. Ver paleta.h.
-// Licença: GPLv2 (mesma do retro-go).
+// paleta.c -- as 128 cores da TIA em RGB565. Ver paleta.h.
+// Licenca: GPLv2 (mesma do retro-go).
+//
+// ARQUIVO GERADO por tools/gera_paleta.py -- nao edite a mao.
+//
+// A tabela e' calculada em tempo de compilacao, nao no aparelho. A versao
+// anterior chamava cos() e sin() 128 vezes na inicializacao; o ESP32-S3 nao
+// tem ponto flutuante de dupla precisao em hardware, entao aquilo eram
+// centenas de chamadas a rotinas de software para produzir numeros que nunca
+// mudam.
+//
+// A tabela continua **provisoria**: o valor definitivo vem da medicao de
+// roms/paleta.asm no Stella. A diferenca e' que trocar a tabela passa a ser
+// trocar numeros, nao mexer em formula.
 
-#include <math.h>
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-#include <stdbool.h>
 #include "paleta.h"
 
-// O sinal da TIA é luminância mais uma fase de cor. Cada matiz é um ângulo
-// diferente na subportadora; a luminância é o nível de branco. Converter isso
-// para RGB é a transformação YIQ padrão do NTSC.
-//
-// Os dois números que definem o resultado são o **ângulo da matiz 1** e o
-// **passo entre matizes**. No NTSC o passo é negativo (as fases andam para
-// trás); no PAL o chip tem menos matizes úteis e o passo é outro. Os valores
-// abaixo são os de praxe e dão cores próximas das corretas — mas "próximas" é
-// exatamente o que este projeto não aceita em outros lugares, e por isso eles
-// estão marcados para serem substituídos pela medição de `roms/paleta.asm`.
-typedef struct { double base, passo, sat; } sistema_t;
-
-static const sistema_t SISTEMAS[2] = {
-    /* NTSC */ { 192.0, -24.0, 0.34 },
-    /* PAL  */ { 148.0, -22.5, 0.32 },
+// Indice = (matiz << 3) | luminancia, ou seja o byte de cor da TIA >> 1.
+static const uint16_t TABELA[2][128] = {
+    { // NTSC  (base 192.0 graus, passo -24.0, saturacao 0.34)
+    0x18C3, 0x39C7, 0x5ACB, 0x7BCF, 0x9CD3, 0xBDD7, 0xDEDB, 0xFFDF,
+    0x01EB, 0x02EF, 0x03F3, 0x1CF7, 0x3DFB, 0x5EFF, 0x7FFF, 0x9FFF,
+    0x0132, 0x0236, 0x133A, 0x343E, 0x553F, 0x763F, 0x973F, 0xB7FF,
+    0x0077, 0x117B, 0x327F, 0x537F, 0x747F, 0x957F, 0xB67F, 0xD77F,
+    0x1819, 0x38BD, 0x59BF, 0x7ABF, 0x9BBF, 0xBCBF, 0xDDBF, 0xFEBF,
+    0x4016, 0x603A, 0x813E, 0xA23F, 0xC33F, 0xE43F, 0xFD3F, 0xFE3F,
+    0x6011, 0x8015, 0xA0F9, 0xC1FD, 0xE2FF, 0xFBFF, 0xFCFF, 0xFDFF,
+    0x7808, 0x980C, 0xB910, 0xDA14, 0xFB18, 0xFC1C, 0xFD1F, 0xFE1F,
+    0x7800, 0x9863, 0xB967, 0xDA6B, 0xFB6F, 0xFC73, 0xFD77, 0xFE7B,
+    0x6800, 0x8900, 0xAA00, 0xCB03, 0xEC07, 0xFD0B, 0xFE0F, 0xFF13,
+    0x48C0, 0x69C0, 0x8AC0, 0xABC0, 0xD4C0, 0xF5C4, 0xFEC8, 0xFFCC,
+    0x2980, 0x4A80, 0x6BA0, 0x8CA0, 0xADA0, 0xCEA1, 0xEFA5, 0xFFE9,
+    0x0240, 0x2340, 0x4440, 0x6540, 0x8640, 0xA742, 0xC7E6, 0xE7EA,
+    0x02A0, 0x03A0, 0x1CA0, 0x3DA0, 0x5EA2, 0x7FA6, 0x9FEA, 0xBFEE,
+    0x02A0, 0x03A0, 0x04A1, 0x25A5, 0x46A9, 0x67AD, 0x87F1, 0xA7F5,
+    0x0262, 0x0366, 0x046A, 0x156E, 0x3672, 0x5776, 0x77FA, 0x97FE,
+    },
+    { // PAL  (base 148.0 graus, passo -22.5, saturacao 0.32)
+    0x18C3, 0x39C7, 0x5ACB, 0x7BCF, 0x9CD3, 0xBDD7, 0xDEDB, 0xFFDF,
+    0x0096, 0x119A, 0x329E, 0x539F, 0x749F, 0x959F, 0xB69F, 0xD79F,
+    0x1017, 0x30DB, 0x51FF, 0x72FF, 0x93FF, 0xB4FF, 0xD5FF, 0xF6FF,
+    0x3816, 0x585A, 0x795E, 0x9A5F, 0xBB5F, 0xDC5F, 0xFD5F, 0xFE5F,
+    0x5812, 0x7816, 0x991A, 0xBA1E, 0xDB1F, 0xFC1F, 0xFD1F, 0xFE1F,
+    0x680C, 0x8810, 0xA914, 0xCA18, 0xEB1C, 0xFC1F, 0xFD1F, 0xFE1F,
+    0x7004, 0x9048, 0xB14C, 0xD250, 0xF354, 0xFC58, 0xFD5C, 0xFE5F,
+    0x7000, 0x90C0, 0xB1C4, 0xD2C8, 0xF3CC, 0xFCD0, 0xFDD4, 0xFED8,
+    0x5860, 0x7960, 0x9A60, 0xBB61, 0xDC65, 0xFD69, 0xFE6D, 0xFF71,
+    0x4100, 0x6200, 0x8300, 0xA400, 0xC500, 0xE604, 0xFF08, 0xFFEC,
+    0x19C0, 0x3AC0, 0x5BC0, 0x7CC0, 0x9DC0, 0xBEC2, 0xDFC6, 0xFFEA,
+    0x0240, 0x1B40, 0x3C40, 0x5D40, 0x7E40, 0x9F43, 0xBFE7, 0xDFEB,
+    0x0280, 0x0380, 0x1C80, 0x3D80, 0x5E84, 0x7F88, 0x9FEC, 0xBFF0,
+    0x0280, 0x0380, 0x0482, 0x2586, 0x468A, 0x678E, 0x87F2, 0xA7F6,
+    0x0242, 0x0346, 0x044A, 0x1D4E, 0x3E52, 0x5F56, 0x7FFA, 0x9FFE,
+    0x01CA, 0x02CE, 0x03D2, 0x24D6, 0x45DA, 0x66DE, 0x87DF, 0xA7FF,
+    },
 };
-
-static uint16_t rgb565(double r, double g, double b, bool be)
-{
-    int R = (int)(r * 255.0 + 0.5), G = (int)(g * 255.0 + 0.5), B = (int)(b * 255.0 + 0.5);
-    if (R < 0) R = 0;
-    if (R > 255) R = 255;
-    if (G < 0) G = 0;
-    if (G > 255) G = 255;
-    if (B < 0) B = 0;
-    if (B > 255) B = 255;
-    uint16_t c = (uint16_t)(((R & 0xF8) << 8) | ((G & 0xFC) << 3) | (B >> 3));
-    return be ? (uint16_t)((c << 8) | (c >> 8)) : c;
-}
 
 void a26_paleta(uint16_t *dest, int sistema, bool be)
 {
-    const sistema_t *s = &SISTEMAS[sistema ? 1 : 0];
+    const uint16_t *t = TABELA[sistema ? 1 : 0];
 
     for (int c = 0; c < 256; c += 2) {
-        int matiz = (c >> 4) & 0x0F;
-        int lum = (c >> 1) & 0x07;
-
-        // A luminância vai de quase preto a quase branco em oito degraus.
-        double y = 0.10 + lum * 0.1257;
-
-        double r, g, b;
-        if (matiz == 0) {
-            r = g = b = y;                        // a coluna cinza
-        } else {
-            double ang = (s->base + (matiz - 1) * s->passo) * (M_PI / 180.0);
-            double i = s->sat * cos(ang);
-            double q = s->sat * sin(ang);
-            r = y + 0.956 * i + 0.621 * q;
-            g = y - 0.272 * i - 0.647 * q;
-            b = y - 1.106 * i + 1.703 * q;
-        }
-
-        uint16_t v = rgb565(r, g, b, be);
+        uint16_t v = t[c >> 1];
+        if (be)
+            v = (uint16_t)((v << 8) | (v >> 8));
         dest[c] = v;
-        dest[c + 1] = v;                          // o bit 0 não existe no chip
+        dest[c + 1] = v;              // o bit 0 nao existe no chip
     }
 }

@@ -16,6 +16,7 @@
 #ifndef A26_PALETA_H
 #define A26_PALETA_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 // Preenche 256 entradas RGB565 (o índice é o byte de cor da TIA; o bit 0 é
