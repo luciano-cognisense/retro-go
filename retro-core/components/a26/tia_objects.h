@@ -35,6 +35,10 @@ typedef enum { OBJ_P0, OBJ_P1, OBJ_M0, OBJ_M1, OBJ_BL, OBJ_PF, OBJ_COUNT } tia_o
 // Acumula as colisões de um pixel. `presentes` é um bitmap de tia_obj_t.
 uint16_t tia_collision_bits(uint8_t presentes);
 
+// A mesma coisa, calculada em vez de consultada. Existe para o teste conferir
+// as 64 entradas da tabela — não use no caminho quente.
+uint16_t tia_collision_bits_ref(uint8_t presentes);
+
 // Os oito registradores CXxx lidos pela CPU, a partir dos 15 bits.
 uint8_t tia_collision_reg(uint16_t bits, int reg);   // reg = 0..7
 
@@ -114,5 +118,14 @@ int tia_hmove_apply(int pos, uint8_t hm_reg);
 // largura do míssil ou da bola para os demais. Para a bola, passe nusiz = 0 —
 // ela não tem cópias.
 int tia_copy_offset(uint8_t nusiz, int pos, int x, int largura);
+
+// Os inícios das cópias que o NUSIZ pede, em 0..159, na mesma ordem em que
+// `tia_copy_offset` as varre. Devolve quantas são (1 a 3).
+//
+// Existe para que o compositor possa calcular isto uma vez por escrita em vez
+// de uma vez por pixel. `tia_copy_offset` passou a ser escrito em cima dele:
+// uma fonte só da verdade, senão a otimização e a referência divergiriam sem
+// que teste nenhum percebesse.
+int tia_copy_inicios(uint8_t nusiz, int pos, uint8_t *ini);
 
 #endif

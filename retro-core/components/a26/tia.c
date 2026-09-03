@@ -55,6 +55,7 @@ void tia_reset(tia_t *t)
 
     memset(t, 0, sizeof(*t));
     t->rdy = true;
+    t->cache_sujo = true;                // o memset zerou o cache junto
     t->inpt[4] = t->inpt[5] = 0x80;      // gatilhos soltos
     tia_audio_reset(&t->audio);
     tia_set_framebuffer(t, fb, stride, l0, nl);
@@ -135,39 +136,125 @@ static bool copia_vale(const tia_t *t, int i, int x, int d)
     return desde < d;                    // começou antes do strobe: vale
 }
 
-uint8_t tia_objects_at(const tia_t *t, int x)
+// O gráfico do jogador esticado para a escala, já com a reflexão resolvida:
+// bit `d` aceso = o pixel a `d` color clocks do início da cópia está aceso.
+// São no máximo 32 pixels (escala 4), então cabe num uint32_t.
+//
+// É a mesma resposta de `tia_player_pixel`, calculada de uma vez só. A divisão
+// por pixel que existia ali era o item mais caro do laço.
+static uint32_t expande_jogador(uint8_t grp, bool refletido, uint8_t nusiz)
 {
+    uint32_t p = 0;
+    int largura = 8 * tia_player_scale(nusiz);
+    for (int d = 0; d < largura; ++d)
+        if (tia_player_pixel(grp, refletido, nusiz, d))    // a função de referência
+            p |= (uint32_t)1 << d;
+    return p;
+}
+
+// Refaz o cache do compositor. Chamado no primeiro pixel depois de qualquer
+// escrita — nunca no meio de um pixel.
+static void atualiza_cache(tia_t *t)
+{
+    for (int i = 0; i < 2; ++i) {
+        uint8_t nusiz = t->nusiz[i];
+        uint8_t gfx = player_gfx(t, i);
+        int esc = tia_player_scale(nusiz);
+
+        // Gráfico zerado é o caso mais comum de todos: nenhuma cópia pode
+        // acender pixel nenhum, então nem vale montar a lista.
+        if (gfx) {
+            t->cache.larg_p[i] = (uint8_t)(8 * esc);
+            t->cache.padrao[i] = expande_jogador(gfx, t->refp[i], nusiz);
+            int pos = (t->pos[OBJ_P0 + i] + tia_player_offset(nusiz)) % 160;
+            t->cache.ncop_p[i] =
+                (uint8_t)tia_copy_inicios(nusiz, pos, t->cache.ini_p[i]);
+        } else {
+            t->cache.larg_p[i] = 0;
+        }
+
+        // Com RESMPx ligado o míssil some (e fica preso ao jogador); com ENAMx
+        // desligado, idem. Nos dois casos não há o que desenhar.
+        bool ligado = t->resmp[i] ? false : t->enam[i];
+        if (ligado) {
+            t->cache.larg_m[i] = (uint8_t)tia_missile_width(nusiz);
+            t->cache.ncop_m[i] =
+                (uint8_t)tia_copy_inicios(nusiz, missile_pos(t, i), t->cache.ini_m[i]);
+        } else {
+            t->cache.larg_m[i] = 0;
+        }
+    }
+
+    bool bola = t->vdelbl ? t->enabl_buf : t->enabl;
+    t->cache.larg_bl = bola ? (uint8_t)tia_ball_width(t->ctrlpf) : 0;
+    t->cache.ini_bl = t->pos[OBJ_BL];
+
+    t->cache_sujo = false;
+}
+
+// A implementação fica estática para o compilador poder embuti-la em
+// `render_pixel` — são 36 mil chamadas por quadro, e o prólogo e o epílogo
+// delas apareciam no perfil. `tia_objects_at` continua existindo como função
+// de verdade para quem usa a TIA de fora.
+static uint8_t objetos_em(tia_t *t, int x)
+{
+    if (t->cache_sujo)
+        atualiza_cache(t);
+
     uint8_t m = 0;
 
     for (int i = 0; i < 2; ++i) {
-        uint8_t nusiz = t->nusiz[i];
-        int esc = tia_player_scale(nusiz);
-        int pos = (t->pos[OBJ_P0 + i] + tia_player_offset(nusiz)) % 160;
-        int d = tia_copy_offset(nusiz, pos, x, 8 * esc);
-        if (d >= 0 && copia_vale(t, OBJ_P0 + i, x, d) &&
-            tia_player_pixel(player_gfx(t, i), t->refp[i], nusiz, d))
-            m |= (uint8_t)(1u << (OBJ_P0 + i));
+        if (t->cache.larg_p[i]) {
+            for (int k = 0; k < t->cache.ncop_p[i]; ++k) {
+                int d = x - t->cache.ini_p[i][k];
+                if (d < 0)
+                    d += 160;
+                if (d < t->cache.larg_p[i]) {
+                    // As cópias do NUSIZ nunca se sobrepõem, então a primeira
+                    // que contém `x` é a única: acertando ou não o pixel, não
+                    // há mais o que procurar.
+                    if (((t->cache.padrao[i] >> d) & 1) &&
+                        copia_vale(t, OBJ_P0 + i, x, d))
+                        m |= (uint8_t)(1u << (OBJ_P0 + i));
+                    break;
+                }
+            }
+        }
 
         // O míssil segue as cópias do NUSIZ do seu jogador, mas com a largura
         // dada pelos bits 4-5 do mesmo registrador.
-        bool ligado = t->resmp[i] ? false : t->enam[i];
-        int dm = ligado
-               ? tia_copy_offset(nusiz, missile_pos(t, i), x, tia_missile_width(nusiz))
-               : -1;
-        if (dm >= 0 && copia_vale(t, OBJ_M0 + i, x, dm))
-            m |= (uint8_t)(1u << (OBJ_M0 + i));
+        if (t->cache.larg_m[i]) {
+            for (int k = 0; k < t->cache.ncop_m[i]; ++k) {
+                int d = x - t->cache.ini_m[i][k];
+                if (d < 0)
+                    d += 160;
+                if (d < t->cache.larg_m[i]) {
+                    if (copia_vale(t, OBJ_M0 + i, x, d))
+                        m |= (uint8_t)(1u << (OBJ_M0 + i));
+                    break;
+                }
+            }
+        }
     }
 
     // A bola não tem cópias: nusiz 0.
-    bool bola = t->vdelbl ? t->enabl_buf : t->enabl;
-    int db = bola ? tia_copy_offset(0, t->pos[OBJ_BL], x, tia_ball_width(t->ctrlpf)) : -1;
-    if (db >= 0 && copia_vale(t, OBJ_BL, x, db))
-        m |= (uint8_t)(1u << OBJ_BL);
+    if (t->cache.larg_bl) {
+        int d = x - t->cache.ini_bl;
+        if (d < 0)
+            d += 160;
+        if (d < t->cache.larg_bl && copia_vale(t, OBJ_BL, x, d))
+            m |= (uint8_t)(1u << OBJ_BL);
+    }
 
     if (tia_playfield_pixel(t, x))
         m |= (uint8_t)(1u << OBJ_PF);
 
     return m;
+}
+
+uint8_t tia_objects_at(tia_t *t, int x)
+{
+    return objetos_em(t, x);
 }
 
 // Prioridade. Normalmente os jogadores ficam na frente do playfield; com
@@ -186,10 +273,23 @@ static uint8_t compose(const tia_t *t, int x, uint8_t m)
     return t->colubk;
 }
 
+// As colisões NÃO dependem do framebuffer.
+//
+// Isto já foi um erro sério aqui. A versão anterior começava com
+// `if (!t->fb_linha) return;`, o que fazia sentido para desenhar e nenhum para
+// emular: quem chama pode não dar buffer nenhum (é assim que o retro-go pula
+// quadro) e pode dar uma janela de 210 linhas em vez das 262. Nos dois casos
+// o pixel deixava de ser composto — e junto com ele deixavam de latchar os
+// registradores de colisão. Com o aparelho pulando quase um quadro em cada
+// dois, metade das colisões do jogo sumia: no River Raid o tiro atravessava o
+// alvo "às vezes".
+//
+// No chip, o que apaga a saída de vídeo (VBLANK, o HBLANK estendido do HMOVE)
+// e o que a manda para a tela são estágios diferentes de quem alimenta os
+// latches de colisão. Este código separa as duas coisas: decide a colisão
+// sempre, e só então, se houver linha, escreve o pixel.
 static void render_pixel(tia_t *t)
 {
-    if (!t->fb_linha)
-        return;
     int x = t->clock - TIA_HBLANK_CLOCKS;
     if (x < 0 || x >= TIA_VISIBLE_PIXELS)
         return;
@@ -199,13 +299,16 @@ static void render_pixel(tia_t *t)
     // que aparece na borda esquerda de tantos jogos. Medido nas 16 faixas de
     // hmove.bin — 8 pixels, exatos.
     if (t->vblank || (t->hmove_line && x < TIA_HMOVE_BLANK)) {
-        t->fb_linha[x] = 0;
+        if (t->fb_linha)
+            t->fb_linha[x] = 0;
         return;
     }
 
-    uint8_t m = tia_objects_at(t, x);
+    uint8_t m = objetos_em(t, x);
     t->collisions |= tia_collision_bits(m);
-    t->fb_linha[x] = compose(t, x, m);
+
+    if (t->fb_linha)
+        t->fb_linha[x] = compose(t, x, m);
 }
 
 static void aplica_escrita(tia_t *t, uint16_t addr, uint8_t val);
@@ -214,7 +317,12 @@ void tia_tick(tia_t *t, int color_clocks)
 {
     while (color_clocks-- > 0) {
         render_pixel(t);
-        tia_audio_clock(&t->audio, t->clock);
+
+        // O relógio do som só faz alguma coisa em quatro dos 228 color clocks
+        // da linha. Chamar a função nos outros 224 era, medido com gprof, 11%
+        // do tempo de quadro só em prólogo e epílogo de chamada.
+        if (t->clock == 9 || t->clock == 37 || t->clock == 81 || t->clock == 149)
+            tia_audio_clock(&t->audio, t->clock);
 
         // A escrita pendente vale a partir do próximo pixel, não deste.
         if (t->w_pend) {
@@ -231,6 +339,7 @@ void tia_tick(tia_t *t, int color_clocks)
                 if (--t->pos_falta[i] == 0) {
                     t->pos[i] = t->pos_nova[i];
                     t->pos_pend &= (uint8_t)~(1u << i);
+                    t->cache_sujo = true;   // a posição mudou de verdade agora
                 }
             }
         }
@@ -373,6 +482,12 @@ static void aplica_escrita(tia_t *t, uint16_t addr, uint8_t val)
     default:
         break;
     }
+
+    // Invalidação grossa: sai mais barato refazer o cache inteiro algumas
+    // vezes por linha do que manter uma lista de quais registradores mexem em
+    // quê — lista que erraria calada no dia em que alguém acrescentasse um
+    // caso ao switch acima.
+    t->cache_sujo = true;
 }
 
 uint8_t tia_read(tia_t *t, uint16_t addr)

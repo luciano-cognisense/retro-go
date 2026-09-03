@@ -116,6 +116,32 @@ typedef struct {
     uint8_t *fb_linha;        // linha corrente, ou NULL fora da janela
 
     uint16_t lines_in_frame;  // linhas do último quadro fechado
+
+    // Cache do compositor.
+    //
+    // Nada aqui é estado do chip: é só o que dá para calcular uma vez por
+    // escrita em vez de 160 vezes por linha. O compositor rodava 41.920 vezes
+    // por quadro e refazia, em cada pixel, a escala do NUSIZ, o deslocamento
+    // das cópias, dois módulos por objeto e uma divisão por pixel de jogador.
+    // Como nada disso muda entre uma escrita e a seguinte, passou para cá.
+    //
+    // A invalidação é grossa de propósito: **qualquer** escrita na TIA suja o
+    // cache inteiro, e um RESPx que completa a volta também. Invalidar campo a
+    // campo seria mais rápido e é exatamente o tipo de coisa que erra em
+    // silêncio; e como um kernel escreve poucas vezes por linha, a diferença
+    // não se paga.
+    struct {
+        uint32_t padrao[2];    // jogador expandido: bit d = pixel aceso
+        uint8_t  larg_p[2];    // 8 * escala, ou 0 se o gráfico está zerado
+        uint8_t  larg_m[2];    // largura do míssil, ou 0 se desligado
+        uint8_t  larg_bl;      // largura da bola, ou 0 se desligada
+        uint8_t  ncop_p[2];    // cópias do jogador: 1 a 3
+        uint8_t  ncop_m[2];    // cópias do míssil: 1 a 3
+        uint8_t  ini_p[2][3];  // início de cada cópia, 0..159
+        uint8_t  ini_m[2][3];
+        uint8_t  ini_bl;
+    } cache;
+    bool cache_sujo;
 } tia_t;
 
 // Bits de CTRLPF
@@ -143,6 +169,8 @@ bool tia_playfield_pixel(const tia_t *t, int x);
 
 // Bitmap de tia_obj_t com os objetos que estão desenhando no pixel visível
 // `x`. Exposto para teste; é o que alimenta a prioridade e as colisões.
-uint8_t tia_objects_at(const tia_t *t, int x);
+// Não é const porque pode reconstruir o cache do compositor antes de
+// responder. O estado do chip continua intocado.
+uint8_t tia_objects_at(tia_t *t, int x);
 
 #endif

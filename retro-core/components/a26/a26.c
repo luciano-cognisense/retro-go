@@ -37,18 +37,44 @@ static void colhe_audio(a26_t *c, int clock_antes)
 // Um ciclo de CPU = 3 color clocks. Enquanto o WSYNC segurar o RDY, a TIA
 // anda sozinha até o fim da linha antes de a CPU conseguir o barramento — é
 // assim que o WSYNC "sai de graça" numa arquitetura dirigida por barramento.
+// Avança `n` color clocks em blocos, parando exatamente nos dois pontos em que
+// o som é amostrado.
+//
+// A versão anterior chamava `tia_tick(&c->tia, 1)` uma vez por color clock, só
+// para poder olhar o relógio entre um e outro. São três chamadas por ciclo de
+// CPU, e 228 por linha de WSYNC — medido com gprof, o prólogo e o epílogo
+// dessas chamadas eram 31% do tempo de quadro. Aqui a TIA recebe o bloco
+// inteiro e o corte é feito onde ele importa.
+static void avanca_n(a26_t *c, int n)
+{
+    while (n > 0) {
+        int cl = c->tia.clock;
+
+        // Até onde dá para ir sem passar de um ponto de amostragem.
+        int passo;
+        if (cl <= 37)
+            passo = 37 - cl + 1;
+        else if (cl <= 149)
+            passo = 149 - cl + 1;
+        else
+            passo = TIA_CLOCKS_PER_LINE - cl;
+        if (passo > n)
+            passo = n;
+
+        int ultimo = cl + passo - 1;              // último color clock do bloco
+        tia_tick(&c->tia, passo);
+        colhe_audio(c, ultimo);
+        n -= passo;
+    }
+}
+
 static void avanca(a26_t *c)
 {
-    while (!c->tia.rdy) {
-        int antes = c->tia.clock;
-        tia_tick(&c->tia, 1);
-        colhe_audio(c, antes);
-    }
-    for (int i = 0; i < 3; ++i) {
-        int antes = c->tia.clock;
-        tia_tick(&c->tia, 1);
-        colhe_audio(c, antes);
-    }
+    // WSYNC: a CPU fica parada até o fim da linha.
+    while (!c->tia.rdy)
+        avanca_n(c, TIA_CLOCKS_PER_LINE - c->tia.clock);
+
+    avanca_n(c, 3);
     c->ciclos++;
 }
 
