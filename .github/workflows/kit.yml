@@ -117,6 +117,16 @@ jobs:
           sys.exit(1 if falhou else 0)
           PY
 
+      - name: Conferir a configuracao de cache que o esp-idf resolveu
+        # Um simbolo errado no sdkconfig e' ignorado em silencio: o build passa
+        # e a configuracao simplesmente nao vale. Este passo imprime o que o
+        # esp-idf de fato resolveu, para nao medir um experimento que nunca
+        # aconteceu.
+        shell: bash
+        run: |
+          grep -E "ESP32S3_(INSTRUCTION|DATA)_CACHE" retro-core/sdkconfig || \
+            echo "AVISO: nenhuma opcao de cache encontrada no sdkconfig resolvido"
+
       - name: Publicar a imagem
         uses: actions/upload-artifact@v4
         with:

@@ -46,6 +46,23 @@ CONFIG_SPI_MASTER_IN_IRAM=y
 CONFIG_SPI_MASTER_ISR_IN_IRAM=y
 
 #
+# Cache de instrucoes
+#
+# O padrao do ESP32-S3 e' 16 KB de cache de instrucoes. O laco quente do
+# emulador de Atari (interpretador do 6507 + TIA + cartucho) nao cabe nisso, e
+# o codigo roda da flash: cada falha de cache e' uma busca na SPI. Medido no
+# aparelho, o emulador gasta 188 ciclos de CPU por color clock contra um
+# orcamento de 71 — e o compositor, que era o suspeito, responde por so' 5%
+# disso. Dobrar a cache e' a hipotese barata de testar antes de reescrever
+# qualquer coisa.
+#
+# Custa 16 KB de RAM interna, tirados de TODOS os apps. Depois de gravar, vale
+# conferir se o SNES e o NES continuam abrindo.
+CONFIG_ESP32S3_INSTRUCTION_CACHE_16KB=n
+CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y
+CONFIG_ESP32S3_INSTRUCTION_CACHE_LINE_32B=y
+
+#
 # ESP32-specific
 #
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_40=n
