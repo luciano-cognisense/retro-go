@@ -242,6 +242,15 @@ void a26_main(void)
 
     int skipFrames = 0;
 
+    // Acumuladores do perfil de quadro. Ver o bloco no fim do laço.
+    struct {
+        int64_t entrada, emu_des, emu_pul, video, audio, total, ciclos;
+        int n, desenhados;
+    } perf = {0};
+    static char perf_texto[1024];
+    static int perf_texto_len;
+    perf_texto_len = 0;
+
     while (true) {
         const int64_t startTime = rg_system_timer();
         uint32_t joystick = rg_input_read_gamepad();
@@ -274,19 +283,23 @@ void a26_main(void)
         if (dific_p1) botoes |= A26_DIFIC_P1;
 
         a26_set_input(&console, botoes);
+        const int64_t t_entrada = rg_system_timer();
 
         // Pular quadro é simplesmente não dar framebuffer à TIA: o compositor
         // por pixel, que é mais da metade do custo, nem roda.
         a26_set_framebuffer(&console, drawFrame ? currentUpdate->data : NULL,
                             A26_LARGURA, A26_LINHA0, A26_ALTURA);
 
+        const uint64_t ciclos_antes = console.ciclos;
         int amostras = a26_run_frame(&console);
+        const int64_t t_emu = rg_system_timer();
 
         if (drawFrame) {
             slowFrame = rg_display_is_busy();
             rg_display_submit(currentUpdate, 0);
             currentUpdate = updates[currentUpdate == updates[0]];
         }
+        const int64_t t_video = rg_system_timer();
 
         // Reamostragem de 31,4 kHz para a taxa do aparelho, por passo fixo.
         size_t saida = AUDIO_SAMPLE_RATE / (sistema_video ? 50 : 60);
@@ -302,6 +315,67 @@ void a26_main(void)
 
         rg_system_tick(rg_system_timer() - startTime);
         rg_audio_submit(mix, saida);
+        const int64_t t_fim = rg_system_timer();
+
+        // Onde o tempo do quadro vai parar.
+        //
+        // Isto existe porque uma otimização de 1,78x no núcleo (medida, e
+        // idêntica bit a bit) não mexeu nada no indicador do aparelho. `emu` é
+        // exatamente `a26_run_frame`, então dá para comparar com os 647 us que
+        // a mesma função leva no host e saber quantas vezes o ESP32 é mais
+        // lento por unidade de trabalho. `video` inclui a espera pela tarefa de
+        // vídeo: `rg_display_submit` bloqueia enquanto ela ainda está mandando
+        // o quadro anterior pelo SPI.
+        //
+        // Vai para arquivo, e não só para o serial, porque nesta PCB o serial
+        // só fica acessível com o ESP32 fora da placa — e aí não há controle
+        // nem tela para chegar até um jogo.
+        perf.entrada += t_entrada - startTime;
+        // Separado de propósito: num quadro pulado a TIA não recebe
+        // framebuffer, então a diferença entre os dois é exatamente o custo do
+        // compositor no aparelho. É o número que decide se vale reescrever o
+        // compositor por faixas ou se o gargalo está em outro lugar.
+        if (drawFrame)
+            perf.emu_des += t_emu - t_entrada;
+        else
+            perf.emu_pul += t_emu - t_entrada;
+        perf.video   += t_video - t_emu;
+        perf.audio   += t_fim - t_video;
+        perf.total   += t_fim - startTime;
+        perf.ciclos  += console.ciclos - ciclos_antes;
+        perf.n++;
+        perf.desenhados += drawFrame ? 1 : 0;
+
+        if (perf.n >= 300) {
+            char linha[200];
+            int pulados = perf.n - perf.desenhados;
+            int len = snprintf(linha, sizeof(linha),
+                "%d quadros: %d desenhados, %d pulados | entrada %d | emu-desenhado %d | "
+                "emu-pulado %d | video %d | audio %d | total %d us | %d qps | "
+                "%d ciclos de CPU/quadro\n",
+                perf.n, perf.desenhados, pulados,
+                (int)(perf.entrada / perf.n),
+                (int)(perf.desenhados ? perf.emu_des / perf.desenhados : 0),
+                (int)(pulados ? perf.emu_pul / pulados : 0),
+                (int)(perf.video / perf.n), (int)(perf.audio / perf.n),
+                (int)(perf.total / perf.n),
+                (int)(1000000LL * perf.n / (perf.total ? perf.total : 1)),
+                (int)(perf.ciclos / perf.n));
+            RG_LOGI("perfil: %s", linha);
+
+            // Mantém as últimas medidas num buffer e reescreve o arquivo
+            // inteiro. Uma gravação a cada 300 quadros não perturba a medição,
+            // e o arquivo está sempre completo mesmo se o aparelho for
+            // desligado no tapa.
+            if (perf_texto_len + len >= (int)sizeof(perf_texto))
+                perf_texto_len = 0;
+            memcpy(perf_texto + perf_texto_len, linha, (size_t)len + 1);
+            perf_texto_len += len;
+            rg_storage_write_file(RG_BASE_PATH "/a26-perfil.txt",
+                                  perf_texto, (size_t)perf_texto_len, 0);
+
+            memset(&perf, 0, sizeof(perf));
+        }
 
         if (skipFrames == 0) {
             int elapsed = rg_system_timer() - startTime;
