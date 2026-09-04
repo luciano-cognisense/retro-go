@@ -27,6 +27,20 @@
 #define TIA_VISIBLE_PIXELS  160
 #define TIA_MAX_LINES       320      // cabe NTSC (262) e PAL (312)
 
+// Geometria dos objetos na linha: o que o compositor precisa saber para
+// decidir se um pixel tem objeto. Derivada dos registradores, nunca estado do
+// chip.
+typedef struct {
+    uint8_t  larg_p[2];    // 8 * escala, ou 0 se o gráfico está zerado
+    uint8_t  larg_m[2];    // largura do míssil, ou 0 se desligado
+    uint8_t  larg_bl;      // largura da bola, ou 0 se desligada
+    uint8_t  ncop_p[2];    // cópias do jogador: 1 a 3
+    uint8_t  ncop_m[2];    // cópias do míssil: 1 a 3
+    uint8_t  ini_p[2][3];  // início de cada cópia, 0..159
+    uint8_t  ini_m[2][3];
+    uint8_t  ini_bl;
+} tia_geo_t;
+
 typedef struct {
     // Varredura
     uint16_t clock;          // 0..227, posição dentro da linha
@@ -136,14 +150,10 @@ typedef struct {
     // não se paga.
     struct {
         uint32_t padrao[2];    // jogador expandido: bit d = pixel aceso
-        uint8_t  larg_p[2];    // 8 * escala, ou 0 se o gráfico está zerado
-        uint8_t  larg_m[2];    // largura do míssil, ou 0 se desligado
-        uint8_t  larg_bl;      // largura da bola, ou 0 se desligada
-        uint8_t  ncop_p[2];    // cópias do jogador: 1 a 3
-        uint8_t  ncop_m[2];    // cópias do míssil: 1 a 3
-        uint8_t  ini_p[2][3];  // início de cada cópia, 0..159
-        uint8_t  ini_m[2][3];
-        uint8_t  ini_bl;
+
+        // A geometria: onde cada objeto começa e quanto ocupa. Fica junta num
+        // sub-struct para poder ser comparada de uma vez — ver `atualiza_cache`.
+        tia_geo_t geo;
 
         // Memo do padrão expandido. Refazer os 8 a 32 bits do jogador custa um
         // laço, e o cache inteiro é invalidado a cada escrita na TIA — inclusive

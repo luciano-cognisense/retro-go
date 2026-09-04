@@ -156,13 +156,24 @@ static uint32_t expande_jogador(uint8_t grp, bool refletido, uint8_t nusiz)
 }
 
 // Marca `len` pixels a partir de `ini` no bitmap de 160 posições, dando a volta.
+// Por palavra, não por bit: um jogador ampliado em três cópias são 96 pixels, e
+// isto é refeito toda vez que o cache do compositor é invalidado.
 static void marca_corrida(uint32_t *m, int ini, int len)
 {
-    for (int k = 0; k < len; ++k) {
-        int x = ini + k;
+    int x = ini;
+    while (len > 0) {
         if (x >= TIA_VISIBLE_PIXELS)
             x -= TIA_VISIBLE_PIXELS;
-        m[x >> 5] |= (uint32_t)1 << (x & 31);
+
+        int b = x & 31;
+        int n = 32 - b;                  // até o fim desta palavra
+        if (n > len)
+            n = len;
+
+        m[x >> 5] |= (n >= 32) ? 0xFFFFFFFFu
+                               : ((((uint32_t)1 << n) - 1) << b);
+        x += n;
+        len -= n;
     }
 }
 
@@ -170,6 +181,9 @@ static void marca_corrida(uint32_t *m, int ini, int len)
 // escrita — nunca no meio de um pixel.
 static void atualiza_cache(tia_t *t)
 {
+    tia_geo_t g;
+    memset(&g, 0, sizeof(g));
+
     for (int i = 0; i < 2; ++i) {
         uint8_t nusiz = t->nusiz[i];
         uint8_t gfx = player_gfx(t, i);
@@ -178,7 +192,7 @@ static void atualiza_cache(tia_t *t)
         // Gráfico zerado é o caso mais comum de todos: nenhuma cópia pode
         // acender pixel nenhum, então nem vale montar a lista.
         if (gfx) {
-            t->cache.larg_p[i] = (uint8_t)(8 * esc);
+            g.larg_p[i] = (uint8_t)(8 * esc);
             if (gfx != t->cache.memo_grp[i] || nusiz != t->cache.memo_nusiz[i] ||
                 (uint8_t)t->refp[i] != t->cache.memo_refp[i]) {
                 t->cache.padrao[i] = expande_jogador(gfx, t->refp[i], nusiz);
@@ -187,64 +201,58 @@ static void atualiza_cache(tia_t *t)
                 t->cache.memo_refp[i] = (uint8_t)t->refp[i];
             }
             int pos = (t->pos[OBJ_P0 + i] + tia_player_offset(nusiz)) % 160;
-            t->cache.ncop_p[i] =
-                (uint8_t)tia_copy_inicios(nusiz, pos, t->cache.ini_p[i]);
-        } else {
-            t->cache.larg_p[i] = 0;
+            g.ncop_p[i] = (uint8_t)tia_copy_inicios(nusiz, pos, g.ini_p[i]);
         }
 
         // Com RESMPx ligado o míssil some (e fica preso ao jogador); com ENAMx
         // desligado, idem. Nos dois casos não há o que desenhar.
         bool ligado = t->resmp[i] ? false : t->enam[i];
         if (ligado) {
-            t->cache.larg_m[i] = (uint8_t)tia_missile_width(nusiz);
-            t->cache.ncop_m[i] =
-                (uint8_t)tia_copy_inicios(nusiz, missile_pos(t, i), t->cache.ini_m[i]);
-        } else {
-            t->cache.larg_m[i] = 0;
+            g.larg_m[i] = (uint8_t)tia_missile_width(nusiz);
+            g.ncop_m[i] = (uint8_t)tia_copy_inicios(nusiz, missile_pos(t, i), g.ini_m[i]);
         }
     }
 
     bool bola = t->vdelbl ? t->enabl_buf : t->enabl;
-    t->cache.larg_bl = bola ? (uint8_t)tia_ball_width(t->ctrlpf) : 0;
-    t->cache.ini_bl = t->pos[OBJ_BL];
+    g.larg_bl = bola ? (uint8_t)tia_ball_width(t->ctrlpf) : 0;
+    g.ini_bl = t->pos[OBJ_BL];
 
-    // O mapa de onde há objeto. Custa uma vez por escrita e poupa o compositor
-    // inteiro em cada pixel que não tem objeto nenhum — que, num quadro de
-    // Atari típico, é a maior parte da linha.
-    memset(t->cache.ocupado, 0, sizeof(t->cache.ocupado));
-    for (int i = 0; i < 2; ++i) {
-        for (int k = 0; k < t->cache.ncop_p[i] && t->cache.larg_p[i]; ++k)
-            marca_corrida(t->cache.ocupado, t->cache.ini_p[i][k], t->cache.larg_p[i]);
-        for (int k = 0; k < t->cache.ncop_m[i] && t->cache.larg_m[i]; ++k)
-            marca_corrida(t->cache.ocupado, t->cache.ini_m[i][k], t->cache.larg_m[i]);
+    // O mapa de ocupação só muda quando a geometria muda — e a maioria das
+    // escritas que invalidam o cache não mexe nela (uma troca de COLUBK, por
+    // exemplo). Comparar 22 bytes sai muito mais barato do que remontar o mapa.
+    if (memcmp(&g, &t->cache.geo, sizeof(g)) != 0) {
+        t->cache.geo = g;
+
+        memset(t->cache.ocupado, 0, sizeof(t->cache.ocupado));
+        for (int i = 0; i < 2; ++i) {
+            for (int k = 0; k < g.ncop_p[i] && g.larg_p[i]; ++k)
+                marca_corrida(t->cache.ocupado, g.ini_p[i][k], g.larg_p[i]);
+            for (int k = 0; k < g.ncop_m[i] && g.larg_m[i]; ++k)
+                marca_corrida(t->cache.ocupado, g.ini_m[i][k], g.larg_m[i]);
+        }
+        if (g.larg_bl)
+            marca_corrida(t->cache.ocupado, g.ini_bl, g.larg_bl);
     }
-    if (t->cache.larg_bl)
-        marca_corrida(t->cache.ocupado, t->cache.ini_bl, t->cache.larg_bl);
 
     t->cache_sujo = false;
 }
 
-// A implementação fica estática para o compilador poder embuti-la em
-// `render_pixel` — são 36 mil chamadas por quadro, e o prólogo e o epílogo
-// delas apareciam no perfil. `tia_objects_at` continua existindo como função
-// de verdade para quem usa a TIA de fora.
 static uint8_t objetos_em(tia_t *t, int x)
 {
     uint8_t m = 0;
 
     for (int i = 0; i < 2; ++i) {
-        if (t->cache.larg_p[i]) {
-            for (int k = 0; k < t->cache.ncop_p[i]; ++k) {
-                int d = x - t->cache.ini_p[i][k];
+        if (t->cache.geo.larg_p[i]) {
+            for (int k = 0; k < t->cache.geo.ncop_p[i]; ++k) {
+                int d = x - t->cache.geo.ini_p[i][k];
                 if (d < 0)
                     d += 160;
-                if (d < t->cache.larg_p[i]) {
+                if (d < t->cache.geo.larg_p[i]) {
                     // As cópias do NUSIZ nunca se sobrepõem, então a primeira
                     // que contém `x` é a única: acertando ou não o pixel, não
                     // há mais o que procurar.
                     if (((t->cache.padrao[i] >> d) & 1) &&
-                        copia_vale(t, OBJ_P0 + i, x, t->cache.ini_p[i][k]))
+                        copia_vale(t, OBJ_P0 + i, x, t->cache.geo.ini_p[i][k]))
                         m |= (uint8_t)(1u << (OBJ_P0 + i));
                     break;
                 }
@@ -253,13 +261,13 @@ static uint8_t objetos_em(tia_t *t, int x)
 
         // O míssil segue as cópias do NUSIZ do seu jogador, mas com a largura
         // dada pelos bits 4-5 do mesmo registrador.
-        if (t->cache.larg_m[i]) {
-            for (int k = 0; k < t->cache.ncop_m[i]; ++k) {
-                int d = x - t->cache.ini_m[i][k];
+        if (t->cache.geo.larg_m[i]) {
+            for (int k = 0; k < t->cache.geo.ncop_m[i]; ++k) {
+                int d = x - t->cache.geo.ini_m[i][k];
                 if (d < 0)
                     d += 160;
-                if (d < t->cache.larg_m[i]) {
-                    if (copia_vale(t, OBJ_M0 + i, x, t->cache.ini_m[i][k]))
+                if (d < t->cache.geo.larg_m[i]) {
+                    if (copia_vale(t, OBJ_M0 + i, x, t->cache.geo.ini_m[i][k]))
                         m |= (uint8_t)(1u << (OBJ_M0 + i));
                     break;
                 }
@@ -268,11 +276,11 @@ static uint8_t objetos_em(tia_t *t, int x)
     }
 
     // A bola não tem cópias: nusiz 0.
-    if (t->cache.larg_bl) {
-        int d = x - t->cache.ini_bl;
+    if (t->cache.geo.larg_bl) {
+        int d = x - t->cache.geo.ini_bl;
         if (d < 0)
             d += 160;
-        if (d < t->cache.larg_bl && copia_vale(t, OBJ_BL, x, t->cache.ini_bl))
+        if (d < t->cache.geo.larg_bl && copia_vale(t, OBJ_BL, x, t->cache.geo.ini_bl))
             m |= (uint8_t)(1u << OBJ_BL);
     }
 
