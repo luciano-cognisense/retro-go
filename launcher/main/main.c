@@ -197,6 +197,21 @@ static rg_gui_event_t webui_switch_cb(rg_gui_option_t *option, rg_gui_event_t ev
 }
 #endif
 
+static void show_splash(void)
+{
+    rg_image_t *splash = gui_get_image("splash", NULL);
+    if (!splash)
+        return;
+
+    rg_gui_set_surface(gui.surface);
+    rg_gui_draw_image(0, 0, gui.width, gui.height, true, splash);
+    rg_gui_set_surface(NULL);
+    rg_display_submit(gui.surface, 0);
+
+    rg_task_delay(1500);
+    rg_surface_free(splash);
+}
+
 static void retro_loop(void)
 {
     tab_t *tab = NULL;
@@ -209,6 +224,9 @@ static void retro_loop(void)
     bool redraw_pending = true;
 
     gui_init(app->isColdBoot);
+    if (app->isColdBoot)
+        show_splash();
+
     applications_init();
     bookmarks_init();
     // browser_init();
