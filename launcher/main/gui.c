@@ -10,6 +10,9 @@
 #define PREVIEW_HEIGHT      ((int)(gui.height * 0.70f))
 #define PREVIEW_WIDTH       ((int)(gui.width * 0.50f))
 
+#define C_HANDS_ON_LAB_BACKGROUND 0xFFBD
+#define C_HANDS_ON_LAB_FOREGROUND 0x1149
+
 retro_gui_t gui;
 
 #define SETTING_SELECTED_TAB    "SelectedTab"
@@ -198,33 +201,33 @@ void gui_set_status(tab_t *tab, const char *left, const char *right)
 void gui_update_theme(void)
 {
     // Load our four color schemes from gui theme
-    gui.themes[0].background = rg_gui_get_theme_color("launcher_1", "background", C_BLACK);
-    gui.themes[0].foreground = rg_gui_get_theme_color("launcher_1", "foreground", C_SNOW);
+    gui.themes[0].background = rg_gui_get_theme_color("launcher_1", "background", C_HANDS_ON_LAB_BACKGROUND);
+    gui.themes[0].foreground = rg_gui_get_theme_color("launcher_1", "foreground", C_HANDS_ON_LAB_FOREGROUND);
     gui.themes[0].list.standard_bg = rg_gui_get_theme_color("launcher_1", "list_standard_bg", C_TRANSPARENT);
-    gui.themes[0].list.standard_fg = rg_gui_get_theme_color("launcher_1", "list_standard_fg", C_GRAY);
-    gui.themes[0].list.selected_bg = rg_gui_get_theme_color("launcher_1", "list_selected_bg", C_TRANSPARENT);
-    gui.themes[0].list.selected_fg = rg_gui_get_theme_color("launcher_1", "list_selected_fg", C_WHITE);
+    gui.themes[0].list.standard_fg = rg_gui_get_theme_color("launcher_1", "list_standard_fg", C_HANDS_ON_LAB_FOREGROUND);
+    gui.themes[0].list.selected_bg = rg_gui_get_theme_color("launcher_1", "list_selected_bg", C_HANDS_ON_LAB_FOREGROUND);
+    gui.themes[0].list.selected_fg = rg_gui_get_theme_color("launcher_1", "list_selected_fg", C_HANDS_ON_LAB_BACKGROUND);
 
-    gui.themes[1].background = rg_gui_get_theme_color("launcher_2", "background", C_BLACK);
-    gui.themes[1].foreground = rg_gui_get_theme_color("launcher_2", "foreground", C_SNOW);
+    gui.themes[1].background = rg_gui_get_theme_color("launcher_2", "background", C_HANDS_ON_LAB_BACKGROUND);
+    gui.themes[1].foreground = rg_gui_get_theme_color("launcher_2", "foreground", C_HANDS_ON_LAB_FOREGROUND);
     gui.themes[1].list.standard_bg = rg_gui_get_theme_color("launcher_2", "list_standard_bg", C_TRANSPARENT);
-    gui.themes[1].list.standard_fg = rg_gui_get_theme_color("launcher_2", "list_standard_fg", C_GRAY);
-    gui.themes[1].list.selected_bg = rg_gui_get_theme_color("launcher_2", "list_selected_bg", C_TRANSPARENT);
-    gui.themes[1].list.selected_fg = rg_gui_get_theme_color("launcher_2", "list_selected_fg", C_GREEN);
+    gui.themes[1].list.standard_fg = rg_gui_get_theme_color("launcher_2", "list_standard_fg", C_HANDS_ON_LAB_FOREGROUND);
+    gui.themes[1].list.selected_bg = rg_gui_get_theme_color("launcher_2", "list_selected_bg", C_HANDS_ON_LAB_FOREGROUND);
+    gui.themes[1].list.selected_fg = rg_gui_get_theme_color("launcher_2", "list_selected_fg", C_HANDS_ON_LAB_BACKGROUND);
 
-    gui.themes[2].background = rg_gui_get_theme_color("launcher_3", "background", C_BLACK);
-    gui.themes[2].foreground = rg_gui_get_theme_color("launcher_3", "foreground", C_SNOW);
+    gui.themes[2].background = rg_gui_get_theme_color("launcher_3", "background", C_HANDS_ON_LAB_BACKGROUND);
+    gui.themes[2].foreground = rg_gui_get_theme_color("launcher_3", "foreground", C_HANDS_ON_LAB_FOREGROUND);
     gui.themes[2].list.standard_bg = rg_gui_get_theme_color("launcher_3", "list_standard_bg", C_TRANSPARENT);
-    gui.themes[2].list.standard_fg = rg_gui_get_theme_color("launcher_3", "list_standard_fg", C_GRAY);
-    gui.themes[2].list.selected_bg = rg_gui_get_theme_color("launcher_3", "list_selected_bg", C_WHITE);
-    gui.themes[2].list.selected_fg = rg_gui_get_theme_color("launcher_3", "list_selected_fg", C_BLACK);
+    gui.themes[2].list.standard_fg = rg_gui_get_theme_color("launcher_3", "list_standard_fg", C_HANDS_ON_LAB_FOREGROUND);
+    gui.themes[2].list.selected_bg = rg_gui_get_theme_color("launcher_3", "list_selected_bg", C_HANDS_ON_LAB_FOREGROUND);
+    gui.themes[2].list.selected_fg = rg_gui_get_theme_color("launcher_3", "list_selected_fg", C_HANDS_ON_LAB_BACKGROUND);
 
-    gui.themes[3].background = rg_gui_get_theme_color("launcher_4", "background", C_BLACK);
-    gui.themes[3].foreground = rg_gui_get_theme_color("launcher_4", "foreground", C_SNOW);
+    gui.themes[3].background = rg_gui_get_theme_color("launcher_4", "background", C_HANDS_ON_LAB_BACKGROUND);
+    gui.themes[3].foreground = rg_gui_get_theme_color("launcher_4", "foreground", C_HANDS_ON_LAB_FOREGROUND);
     gui.themes[3].list.standard_bg = rg_gui_get_theme_color("launcher_4", "list_standard_bg", C_TRANSPARENT);
-    gui.themes[3].list.standard_fg = rg_gui_get_theme_color("launcher_4", "list_standard_fg", C_DARK_GRAY);
-    gui.themes[3].list.selected_bg = rg_gui_get_theme_color("launcher_4", "list_selected_bg", C_WHITE);
-    gui.themes[3].list.selected_fg = rg_gui_get_theme_color("launcher_4", "list_selected_fg", C_BLACK);
+    gui.themes[3].list.standard_fg = rg_gui_get_theme_color("launcher_4", "list_standard_fg", C_HANDS_ON_LAB_FOREGROUND);
+    gui.themes[3].list.selected_bg = rg_gui_get_theme_color("launcher_4", "list_selected_bg", C_HANDS_ON_LAB_FOREGROUND);
+    gui.themes[3].list.selected_fg = rg_gui_get_theme_color("launcher_4", "list_selected_fg", C_HANDS_ON_LAB_BACKGROUND);
 
     // Flush our image cache to make sure the new images are loaded next time
     for (size_t i = 0; i < gui.tabs_count; ++i)
@@ -384,7 +387,7 @@ void gui_redraw(void)
     }
     else if (gui.browse)
     {
-        gui_draw_background(tab, 4);
+        gui_draw_background(tab, 0);
         gui_draw_header(tab, 0);
         gui_draw_status(tab);
         gui_draw_list(tab);
@@ -393,7 +396,7 @@ void gui_redraw(void)
     else
     {
         gui_draw_background(tab, 0);
-        gui_draw_header(tab, (gui.height - HEADER_HEIGHT) / 2);
+        gui_draw_header(tab, 0);
         // gui_draw_tab_indicator();
     }
 
