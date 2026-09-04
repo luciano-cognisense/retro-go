@@ -1,4 +1,5 @@
-set(COMPONENT_SRCDIRS ".")
+file(GLOB COMPONENT_SRCS "*.c")
+list(REMOVE_ITEM COMPONENT_SRCS "${COMPONENT_DIR}/images_old.c")
 set(COMPONENT_ADD_INCLUDEDIRS ".")
 register_component()
 rg_setup_compile_options(-O2 -Wno-error=format -Wno-error=char-subscripts)

@@ -4,10 +4,13 @@ import os, sys, glob, textwrap
 
 # os.chdir(sys.path[0])
 
+input_dir = sys.argv[1] if len(sys.argv) > 1 else "themes/default"
+output_file = sys.argv[2] if len(sys.argv) > 2 else "launcher/main/images.c"
+
 output = '#include "gui.h"\n\n'
 refs = ""
 
-for file in sorted(glob.glob("themes/default/*.png")):
+for file in sorted(glob.glob(os.path.join(input_dir, "*.png"))):
     with open(file, "rb") as f:
         data = f.read()
         size = len(data)
@@ -26,5 +29,5 @@ for file in sorted(glob.glob("themes/default/*.png")):
 
 output += "\nconst binfile_t *builtin_images[] = {%s\n0\n};\n" % refs
 
-with open("launcher/main/images.c", "w", newline="") as f:
+with open(output_file, "w", newline="") as f:
     f.write(output)
