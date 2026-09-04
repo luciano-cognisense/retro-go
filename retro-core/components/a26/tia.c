@@ -700,8 +700,9 @@ uint8_t tia_read(tia_t *t, uint16_t addr)
     if (reg >= 0x08 && reg <= 0x0B) {
         if (!t->pa_ligada)
             return 0x00;                 // joystick: pino do potenciômetro solto
-        uint32_t limiar = (uint32_t)t->paddle[reg - 0x08] *
-                          (TIA_CLOCKS_PER_LINE * TIA_PA_ESCALA_LINHAS) / 256u;
+        uint32_t linhas = TIA_PA_BASE_LINHAS +
+                          (uint32_t)t->paddle[reg - 0x08] * TIA_PA_CURSO_LINHAS / 255u;
+        uint32_t limiar = linhas * TIA_CLOCKS_PER_LINE;
         return (!t->pa_aterrado && t->pa_carga >= limiar) ? 0x80 : 0x00;
     }
 

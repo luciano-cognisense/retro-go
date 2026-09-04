@@ -306,9 +306,12 @@ void a26_main(void)
             // Modo pá: o direcional não vai para o console. Esquerda e direita
             // giram o potenciômetro, e o botão entra pela linha do SWCHA, que
             // é por onde o botão da pá entra no aparelho de verdade.
+            // Mais resistência move a raquete para a ESQUERDA — medido com
+            // o Breakout, varrendo as 256 posições e olhando onde ela caía.
+            // Por isso "direita" diminui o valor.
             int dir = 0;
-            if (joystick & RG_KEY_LEFT)  dir -= 1;
-            if (joystick & RG_KEY_RIGHT) dir += 1;
+            if (joystick & RG_KEY_LEFT)  dir += 1;
+            if (joystick & RG_KEY_RIGHT) dir -= 1;
 
             if (dir == 0) {
                 pa_segurando = 0;

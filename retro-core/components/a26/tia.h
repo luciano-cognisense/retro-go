@@ -195,10 +195,21 @@ typedef struct {
 #define TIA_CTRLPF_SCORE 0x02   // metade esquerda em COLUP0, direita em COLUP1
 #define TIA_CTRLPF_PFP   0x04   // playfield na frente dos jogadores
 
-// Quantas linhas de varredura leva a carga com a pá no fim do curso. O valor
-// vem do RC do circuito original (~1 MΩ e o capacitor da placa) e é o que
-// decide se a raquete do jogo cobre a tela inteira ou só um pedaço dela.
-#define TIA_PA_ESCALA_LINHAS 260
+// A carga, em linhas de varredura, nos dois batentes da pá.
+//
+// Estes dois números foram **medidos**, não escolhidos: com o Breakout, varri
+// as 256 posições e olhei onde a raquete caía na tela. Abaixo de ~68 linhas
+// ela some (o jogo não espera contagem tão curta) e acima de ~196 ela fica
+// grudada na parede esquerda. Ou seja: o potenciômetro de verdade nunca chega
+// a zero ohm — tem uma resistência de série —, e o curso útil dele é essa
+// faixa. Mapear o curso inteiro do direcional nela é o que faz a raquete
+// cobrir a tela de ponta a ponta em vez de metade dela.
+//
+// Aferido só com o Breakout. Se algum dia entrar outro jogo de pá no kit,
+// vale conferir: a faixa é do hardware, não do jogo, e tem de servir para os
+// dois.
+#define TIA_PA_BASE_LINHAS   68   // batente de menor resistência
+#define TIA_PA_CURSO_LINHAS 128   // de um batente ao outro
 
 void tia_reset(tia_t *t);
 
