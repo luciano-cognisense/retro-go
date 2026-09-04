@@ -38,6 +38,17 @@ static void atualiza_linha(tia_t *t)
                 ? t->fb + (size_t)y * t->fb_stride : NULL;
 }
 
+void tia_set_paddle(tia_t *t, int i, uint8_t pos)
+{
+    if (i >= 0 && i < 4)
+        t->paddle[i] = pos;
+}
+
+void tia_set_paddles_ligadas(tia_t *t, bool ligadas)
+{
+    t->pa_ligada = ligadas;
+}
+
 void tia_set_framebuffer(tia_t *t, uint8_t *fb, int stride, int linha0, int linhas)
 {
     t->fb = fb;
@@ -489,6 +500,12 @@ void tia_tick(tia_t *t, int color_clocks)
 
         color_clocks -= passo;
 
+        // A carga das pás anda com a varredura. O teto evita que a contagem dê
+        // a volta num jogo que nunca aterra os capacitores — o valor já passou
+        // do fim do curso muito antes disso.
+        if (!t->pa_aterrado && t->pa_carga < 0x0F000000u)
+            t->pa_carga += (uint32_t)passo;
+
         // A escrita é aplicada com o relógio ainda no último color clock do
         // trecho — o RESPx lê `t->clock` para saber onde o objeto cai, e um
         // pixel de diferença aqui move o objeto na tela.
@@ -560,7 +577,15 @@ static void aplica_escrita(tia_t *t, uint16_t addr, uint8_t val)
         t->vsync = (val & 0x02) != 0;
         break;
 
-    case VBLANK: t->vblank = (val & 0x02) != 0; break;
+    case VBLANK:
+        t->vblank = (val & 0x02) != 0;
+        // Bit 7: aterra os capacitores das pás. Enquanto ligado a contagem
+        // fica em zero; ao ser solto, ela recomeça — e é essa contagem que o
+        // jogo transforma em posição.
+        t->pa_aterrado = (val & 0x80) != 0;
+        if (t->pa_aterrado)
+            t->pa_carga = 0;
+        break;
 
     case COLUP0: t->colup0 = val & 0xFE; break;   // o bit 0 não existe na TIA
     case COLUP1: t->colup1 = val & 0xFE; break;
@@ -670,7 +695,18 @@ uint8_t tia_read(tia_t *t, uint16_t addr)
     if (reg <= 0x07)
         return tia_collision_reg(t->collisions, reg);
 
-    if (reg >= 0x08 && reg <= 0x0D)
+    // INPT0-INPT3: as pás. O bit 7 sobe quando o capacitor passa do limiar,
+    // e o limiar é proporcional à posição.
+    if (reg >= 0x08 && reg <= 0x0B) {
+        if (!t->pa_ligada)
+            return 0x00;                 // joystick: pino do potenciômetro solto
+        uint32_t limiar = (uint32_t)t->paddle[reg - 0x08] *
+                          (TIA_CLOCKS_PER_LINE * TIA_PA_ESCALA_LINHAS) / 256u;
+        return (!t->pa_aterrado && t->pa_carga >= limiar) ? 0x80 : 0x00;
+    }
+
+    // INPT4 e INPT5: os gatilhos dos joysticks.
+    if (reg == 0x0C || reg == 0x0D)
         return (uint8_t)(t->inpt[reg - 0x08] & 0x80);
 
     // Os bits não acionados pela TIA ficam com o que já estava no barramento;

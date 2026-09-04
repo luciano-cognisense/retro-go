@@ -57,8 +57,20 @@ static int16_t audio_a26[A26_AUDIO_MAX];
 static const char *SETTING_SISTEMA = "sistema";     // 0 = NTSC, 1 = PAL
 static const char *SETTING_DIFIC_P0 = "dificP0";
 static const char *SETTING_DIFIC_P1 = "dificP1";
+static const char *SETTING_CONTROLE = "controle";   // 0 = joystick, 1 = pá
 static int sistema_video;
 static int dific_p0, dific_p1;
+static int controle_pa;
+
+// A raquete virtual. O aparelho tem um direcional de oito posições e o jogo
+// espera um potenciômetro; a conversão é integrar a direção no tempo. A
+// velocidade cresce enquanto a tecla fica presa: um toque dá o ajuste fino que
+// o Breakout exige perto da parede, e segurar atravessa a tela em meio segundo.
+#define PA_MIN        3      // passos por quadro no começo
+#define PA_MAX       12      // passos por quadro com a tecla presa
+#define PA_ACELERA   14      // quadros até chegar na velocidade máxima
+static int pa_pos = 128;
+static int pa_segurando;
 
 // --- estado -----------------------------------------------------------
 
@@ -142,6 +154,22 @@ static rg_gui_event_t sistema_cb(rg_gui_option_t *opt, rg_gui_event_t event)
     return RG_DIALOG_VOID;
 }
 
+// Joystick ou pá. Não dá para adivinhar pelo jogo: nada na ROM diz qual
+// controle ela espera, e vários títulos aceitam os dois. Então é escolha de
+// quem joga — e sem ela metade do catálogo de 1977 a 1980 não funciona.
+static rg_gui_event_t controle_cb(rg_gui_option_t *opt, rg_gui_event_t event)
+{
+    if (event == RG_DIALOG_PREV || event == RG_DIALOG_NEXT) {
+        controle_pa = !controle_pa;
+        rg_settings_set_number(NS_APP, SETTING_CONTROLE, controle_pa);
+        a26_set_paddles_ligadas(&console, controle_pa != 0);
+        pa_pos = 128;
+        return RG_DIALOG_REDRAW;
+    }
+    strcpy(opt->value, controle_pa ? "Paddle" : "Joystick");
+    return RG_DIALOG_VOID;
+}
+
 // As duas chaves de dificuldade do painel do console. Muito jogo muda de
 // comportamento com elas — e num aparelho sem as chaves físicas, quem não
 // expõe isso no menu simplesmente não tem como jogar metade das variações.
@@ -169,6 +197,7 @@ static rg_gui_event_t dific_p1_cb(rg_gui_option_t *opt, rg_gui_event_t event)
 
 static void options_handler(rg_gui_option_t *dest)
 {
+    *dest++ = (rg_gui_option_t){0, _("Controller"), "-", RG_DIALOG_FLAG_NORMAL, &controle_cb};
     *dest++ = (rg_gui_option_t){0, _("TV system"), "-", RG_DIALOG_FLAG_NORMAL, &sistema_cb};
     *dest++ = (rg_gui_option_t){0, _("Difficulty P1"), "-", RG_DIALOG_FLAG_NORMAL, &dific_p0_cb};
     *dest++ = (rg_gui_option_t){0, _("Difficulty P2"), "-", RG_DIALOG_FLAG_NORMAL, &dific_p1_cb};
@@ -203,7 +232,9 @@ void a26_main(void)
     sistema_video = rg_settings_get_number(NS_APP, SETTING_SISTEMA, 0);
     dific_p0 = rg_settings_get_number(NS_APP, SETTING_DIFIC_P0, 0);
     dific_p1 = rg_settings_get_number(NS_APP, SETTING_DIFIC_P1, 0);
-    RG_LOGI("a26: opcoes lidas (sistema=%d dif=%d/%d)", sistema_video, dific_p0, dific_p1);
+    controle_pa = rg_settings_get_number(NS_APP, SETTING_CONTROLE, 0);
+    RG_LOGI("a26: opcoes lidas (sistema=%d dif=%d/%d controle=%s)",
+            sistema_video, dific_p0, dific_p1, controle_pa ? "pa" : "joystick");
 
     aplica_paleta();
     RG_LOGI("a26: paleta aplicada");
@@ -228,6 +259,8 @@ void a26_main(void)
     a26_set_audio_buffer(&console, audio_a26, A26_AUDIO_MAX);
     if (!a26_load(&console, rom_data, rom_size))
         RG_PANIC("Unsupported cartridge bankswitching scheme!");
+
+    a26_set_paddles_ligadas(&console, controle_pa != 0);
 
     // %zu não é usado de propósito: o alvo compila com CONFIG_NEWLIB_NANO_FORMAT,
     // e a implementação reduzida de printf não cobre todos os modificadores de
@@ -269,11 +302,34 @@ void a26_main(void)
         // gatilho — quem cresceu com o joystick original espera isso, e quem
         // não cresceu não vai procurar qual dos dois é.
         uint16_t botoes = 0;
-        if (joystick & RG_KEY_UP)     botoes |= A26_CIMA;
-        if (joystick & RG_KEY_DOWN)   botoes |= A26_BAIXO;
-        if (joystick & RG_KEY_LEFT)   botoes |= A26_ESQUERDA;
-        if (joystick & RG_KEY_RIGHT)  botoes |= A26_DIREITA;
-        if (joystick & (RG_KEY_A | RG_KEY_B)) botoes |= A26_GATILHO;
+        if (controle_pa) {
+            // Modo pá: o direcional não vai para o console. Esquerda e direita
+            // giram o potenciômetro, e o botão entra pela linha do SWCHA, que
+            // é por onde o botão da pá entra no aparelho de verdade.
+            int dir = 0;
+            if (joystick & RG_KEY_LEFT)  dir -= 1;
+            if (joystick & RG_KEY_RIGHT) dir += 1;
+
+            if (dir == 0) {
+                pa_segurando = 0;
+            } else {
+                int v = PA_MIN + (PA_MAX - PA_MIN) *
+                        (pa_segurando < PA_ACELERA ? pa_segurando : PA_ACELERA) / PA_ACELERA;
+                pa_pos += dir * v;
+                if (pa_pos < 0)   pa_pos = 0;
+                if (pa_pos > 255) pa_pos = 255;
+                if (pa_segurando < PA_ACELERA)
+                    pa_segurando++;
+            }
+            a26_set_paddle(&console, 0, (uint8_t)pa_pos);
+            if (joystick & (RG_KEY_A | RG_KEY_B)) botoes |= A26_PA_BOTAO0;
+        } else {
+            if (joystick & RG_KEY_UP)     botoes |= A26_CIMA;
+            if (joystick & RG_KEY_DOWN)   botoes |= A26_BAIXO;
+            if (joystick & RG_KEY_LEFT)   botoes |= A26_ESQUERDA;
+            if (joystick & RG_KEY_RIGHT)  botoes |= A26_DIREITA;
+            if (joystick & (RG_KEY_A | RG_KEY_B)) botoes |= A26_GATILHO;
+        }
 
         // As duas chaves do painel: START é o RESET (que no 2600 é "começar o
         // jogo", não "reiniciar o aparelho") e SELECT escolhe a variação.

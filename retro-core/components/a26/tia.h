@@ -89,14 +89,32 @@ typedef struct {
     bool    enabl, enabl_buf;// ENABL corrente e atrasado
     bool    resmp[2];        // RESMPx: míssil travado no meio do jogador
 
-    // Entradas: INPT0-INPT5. Só o bit 7 vale. As quatro primeiras são as pás
-    // (descarregadas = 0); as duas últimas são os gatilhos dos joysticks, e
-    // são **ativas em nível baixo**: 0x80 quer dizer solto.
+    // Entradas: INPT0-INPT5. Só o bit 7 vale. As duas últimas são os gatilhos
+    // dos joysticks, **ativos em nível baixo**: 0x80 quer dizer solto.
     //
     // O padrão importa mais do que parece. Com estes registradores devolvendo
     // 0, todo jogo acha que o gatilho está preso desde que o console ligou —
     // e vários simplesmente não saem da tela de abertura.
     uint8_t  inpt[6];
+
+    // As pás (INPT0-INPT3) não são botões: são potenciômetros lidos por tempo.
+    //
+    // Cada pá é um resistor variável carregando um capacitor. O bit 7 de INPTx
+    // sobe quando o capacitor passa do limiar, e quanto tempo isso leva é a
+    // posição da pá. O jogo escreve VBLANK com o bit 7 ligado para aterrar os
+    // capacitores, solta, e conta linhas de varredura até o bit subir.
+    //
+    // Não emular isto não deixa o jogo "sem controle": deixa a contagem sem
+    // fim, e o jogo conclui que a pá está no fim do curso. É por isso que a
+    // raquete do Breakout ficava travada no canto.
+    // `pa_ligada` diz se há pás no console. Com um joystick espetado, os pinos
+    // do potenciômetro ficam soltos: o capacitor não carrega e INPT0-3 leem 0.
+    // Isso não é detalhe — o Decathlon lê esses registradores, e ligar a
+    // carga com joystick muda o comportamento dele.
+    bool     pa_ligada;
+    bool     pa_aterrado;    // VBLANK bit 7: capacitores em curto
+    uint32_t pa_carga;       // color clocks desde que o aterramento foi solto
+    uint8_t  paddle[4];      // posição de cada pá, 0..255
 
     bool     hmove_line;     // a linha corrente teve HMOVE: 8 pixels a mais de blank
     uint16_t collisions;     // os 15 bits de colisão, zerados por CXCLR
@@ -177,7 +195,18 @@ typedef struct {
 #define TIA_CTRLPF_SCORE 0x02   // metade esquerda em COLUP0, direita em COLUP1
 #define TIA_CTRLPF_PFP   0x04   // playfield na frente dos jogadores
 
+// Quantas linhas de varredura leva a carga com a pá no fim do curso. O valor
+// vem do RC do circuito original (~1 MΩ e o capacitor da placa) e é o que
+// decide se a raquete do jogo cobre a tela inteira ou só um pedaço dela.
+#define TIA_PA_ESCALA_LINHAS 260
+
 void tia_reset(tia_t *t);
+
+// Posição de uma das quatro pás, 0 a 255. 0 é a carga instantânea.
+void tia_set_paddle(tia_t *t, int i, uint8_t pos);
+
+// Há pás espetadas no console? Com joystick, INPT0-3 leem 0.
+void tia_set_paddles_ligadas(tia_t *t, bool ligadas);
 
 // Onde a TIA desenha. `linha0` é a primeira linha da varredura que aparece na
 // imagem e `linhas` a altura dela. Passar fb = NULL desliga o desenho (útil

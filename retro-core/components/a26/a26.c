@@ -174,6 +174,16 @@ void a26_reset(a26_t *c)
     m6502_reset(&c->cpu);
 }
 
+void a26_set_paddle(a26_t *c, int i, uint8_t pos)
+{
+    tia_set_paddle(&c->tia, i, pos);
+}
+
+void a26_set_paddles_ligadas(a26_t *c, bool ligadas)
+{
+    tia_set_paddles_ligadas(&c->tia, ligadas);
+}
+
 void a26_set_framebuffer(a26_t *c, uint8_t *fb, int stride, int linha0, int linhas)
 {
     tia_set_framebuffer(&c->tia, fb, stride, linha0, linhas);
@@ -196,6 +206,12 @@ void a26_set_input(a26_t *c, uint16_t b)
     if (b & A26_ESQUERDA) a &= (uint8_t)~0x40;
     if (b & A26_BAIXO)    a &= (uint8_t)~0x20;
     if (b & A26_CIMA)     a &= (uint8_t)~0x10;
+
+    // Os botões das pás entram por estas mesmas linhas. Quem manda pá não
+    // manda direção, então não há conflito.
+    if (b & A26_PA_BOTAO0) a &= (uint8_t)~0x80;
+    if (b & A26_PA_BOTAO1) a &= (uint8_t)~0x40;
+
     c->riot.in_a = a;
 
     // SWCHB, porta B: as chaves do painel. Também ativas em nível baixo, o que

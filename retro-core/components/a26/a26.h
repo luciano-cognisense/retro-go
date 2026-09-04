@@ -44,6 +44,12 @@
 #define A26_DIFIC_P1 0x0100
 #define A26_PRETO_E_BRANCO 0x0200
 
+// Botões das pás. Não são o gatilho do joystick: no console de verdade eles
+// entram pelas mesmas linhas das direções do joystick (SWCHA), e não por
+// INPT4. Por isso têm bits próprios — quem usa pás não manda direção.
+#define A26_PA_BOTAO0 0x0400   // pá 1: mesma linha do "direita" do joystick
+#define A26_PA_BOTAO1 0x0800   // pá 2: mesma linha do "esquerda"
+
 typedef struct {
     m6502_t cpu;
     riot_t  riot;
@@ -86,6 +92,12 @@ void a26_set_audio_buffer(a26_t *c, int16_t *buf, int capacidade);
 
 // Estado dos botões e das chaves, bitmap de A26_*.
 void a26_set_input(a26_t *c, uint16_t botoes);
+
+// Pás. `pos` vai de 0 (carga instantânea) a 255 (fim do curso). Enquanto
+// `a26_set_paddles_ligadas` estiver em falso, INPT0-3 leem 0 — que é o que o
+// console faz com um joystick espetado, e o Decathlon depende disso.
+void a26_set_paddle(a26_t *c, int i, uint8_t pos);
+void a26_set_paddles_ligadas(a26_t *c, bool ligadas);
 
 // Roda até fechar um quadro. Devolve quantas amostras de som foram produzidas.
 int a26_run_frame(a26_t *c);
