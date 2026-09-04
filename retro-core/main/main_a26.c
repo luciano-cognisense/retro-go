@@ -377,11 +377,24 @@ void a26_main(void)
             memset(&perf, 0, sizeof(perf));
         }
 
+        // Nunca mais de um quadro pulado seguido.
+        //
+        // O retro-go tem um controlador automático que sobe o frameskip
+        // enquanto `speed < 96%` e `busy > 85%`, e só desce quando
+        // `speed > 99%` **e** `busy < 85%`. Aqui ele encontra um caso que a
+        // regra não prevê: o emulador chega a 100% de velocidade justamente
+        // *por causa* do pulo, e `busy` fica em 98% porque estamos no limite —
+        // então a condição de descer nunca acontece e ele estaciona em 5. Era
+        // isso que dava 50 quadros desenhados em 300, ou seja, imagem a 10 por
+        // segundo com a lógica do jogo correndo a 60.
+        //
+        // A regra abaixo é a do próprio quadro: pula um se o anterior estourou
+        // o orçamento, e no máximo um. Isso garante 30 quadros por segundo na
+        // tela. Se um jogo for pesado demais para isso, a conta aparece como
+        // `speed` abaixo de 100 no menu — o que é honesto, e visível.
         if (skipFrames == 0) {
             int elapsed = rg_system_timer() - startTime;
-            if (app->frameskip > 0)
-                skipFrames = app->frameskip;
-            else if (elapsed > app->frameTime + 1500)
+            if (elapsed > app->frameTime + 1500)
                 skipFrames = 1;
             else if (drawFrame && slowFrame)
                 skipFrames = 1;

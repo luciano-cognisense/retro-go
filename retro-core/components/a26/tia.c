@@ -328,6 +328,45 @@ static uint8_t compose(const tia_t *t, int x, uint8_t m)
 // e o que a manda para a tela são estágios diferentes de quem alimenta os
 // latches de colisão. Este código separa as duas coisas: decide a colisão
 // sempre, e só então, se houver linha, escreve o pixel.
+// Preenche uma faixa que não tem objeto móvel nenhum: só playfield e fundo.
+//
+// O playfield muda de valor a cada 4 pixels — cada um dos 20 bits vale quatro
+// colunas. Perguntar a cor pixel a pixel era chamar `tia_playfield_pixel` (com
+// a divisão por 4 dentro) e `playfield_color` 160 vezes por linha para
+// responder a mesma coisa quatro vezes seguidas. Aqui a cor é decidida uma vez
+// por grupo de quatro e escrita de uma vez.
+static void preenche_fundo(const tia_t *t, uint8_t *linha, int x0, int x1)
+{
+    const uint8_t bk = t->colubk;
+    const bool score = (t->ctrlpf & TIA_CTRLPF_SCORE) != 0;
+    const bool ref = (t->ctrlpf & TIA_CTRLPF_REF) != 0;
+    const uint32_t pat = t->pf_pattern;
+
+    int x = x0;
+    while (x < x1) {
+        int bit;
+        int fim;
+        if (x < 80) {
+            bit = x >> 2;
+            fim = (x & ~3) + 4;
+            if (fim > 80)
+                fim = 80;
+        } else {
+            int d = x - 80;
+            bit = ref ? 19 - (d >> 2) : (d >> 2);
+            fim = 80 + ((d & ~3) + 4);
+        }
+        if (fim > x1)
+            fim = x1;
+
+        uint8_t cor = ((pat >> bit) & 1)
+                    ? (score ? (x < 80 ? t->colup0 : t->colup1) : t->colupf)
+                    : bk;
+        memset(linha + x, cor, (size_t)(fim - x));
+        x = fim;
+    }
+}
+
 // Desenha os pixels dos color clocks [c0, c0+n) da linha corrente.
 //
 // Um trecho só existe enquanto nada muda: quem chama corta em toda escrita, em
@@ -394,13 +433,9 @@ static void desenha_faixa(tia_t *t, int c0, int n)
                        : (((uint32_t)1 << (fim - x)) - 1) << (x & 31);
 
         if ((bits & faixa) == 0) {
-            if (linha) {
-                for (; x < fim; ++x)
-                    linha[x] = tia_playfield_pixel(t, x) ? playfield_color(t, x)
-                                                         : t->colubk;
-            } else {
-                x = fim;
-            }
+            if (linha)
+                preenche_fundo(t, linha, x, fim);
+            x = fim;
             continue;
         }
 
