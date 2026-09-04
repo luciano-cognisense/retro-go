@@ -33,11 +33,27 @@
 #define PALETA_BE false
 #endif
 
-// A janela vertical. Um quadro NTSC tem 3 linhas de VSYNC + 37 de VBLANK antes
-// da parte visível, que tem 192. Começar um pouco antes e terminar um pouco
-// depois dá margem para os jogos que fogem do padrão sem cortar imagem.
+// A janela vertical.
+//
+// O 2600 não tem resolução vertical: cada jogo escolhe quantas linhas de
+// VBLANK põe antes de desenhar e quantas linhas desenha. Não dá para perguntar
+// ao jogo onde a imagem dele começa — muitos nem ligam VBLANK no fim do quadro
+// (o River Patrol deixa desligado o quadro inteiro), então o registrador não
+// serve de sinal. O que sobra é medir.
+//
+// Medido nos cinco jogos que tenho aqui, olhando quais linhas de fato recebem
+// pixel:
+//
+//   Breakout      TIA  40-230   River Patrol  TIA  44-234
+//   Decathlon     TIA  39-238   River Raid    TIA  39-244
+//   Frogger II    TIA  44-233
+//
+// A união é 39-244, ou seja 206 linhas. Com a janela começando na 34 o fim
+// caía na 243 e o River Raid perdia a última linha — justamente onde ficam o
+// combustível e as vidas. Começando na 36 a janela cobre 36-245 e sobra margem
+// para os dois lados em todos os cinco.
 #define A26_LARGURA   160
-#define A26_LINHA0     34
+#define A26_LINHA0     36
 #define A26_ALTURA    210
 
 // Som: o 2600 produz duas amostras por linha de varredura, ~31,4 kHz em NTSC.

@@ -153,6 +153,7 @@ typedef struct {
 
     uint16_t lines_in_frame;  // linhas do último quadro fechado
 
+
     // Cache do compositor.
     //
     // Nada aqui é estado do chip: é só o que dá para calcular uma vez por
