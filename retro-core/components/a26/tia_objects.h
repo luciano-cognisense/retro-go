@@ -95,7 +95,14 @@ int tia_copy_starts_at(uint8_t nusiz, int c);
 // dela, para o pixel corrente mais o atraso do chip.
 #define TIA_RESP_MIN     3   // medido: RESPx no HBLANK põe a borda no pixel 3
 #define TIA_RESP_ATRASO  5   // atraso entre o strobe e o pixel — NÃO validado
-int tia_respx_pos(int cc);
+
+// Míssil e bola largam **um color clock antes** do jogador. Os dois números
+// acima foram medidos com jogadores (hmove.bin e nusiz.bin desenham jogadores),
+// e usá-los para os outros três objetos põe míssil e bola um pixel à direita do
+// lugar. Ver `tia_respx_pos`.
+#define TIA_RESP_MIN_MB     2
+#define TIA_RESP_ATRASO_MB  4
+int tia_respx_pos(int cc, bool jogador);
 
 // Deslocamento em pixels do nibble alto de HMPx/HMMx/HMBL. O nibble é um
 // número de 4 bits com sinal e o objeto anda para a ESQUERDA por esse tanto:

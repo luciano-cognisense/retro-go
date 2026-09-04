@@ -117,6 +117,12 @@ typedef struct {
     uint8_t  paddle[4];      // posição de cada pá, 0..255
 
     bool     hmove_line;     // a linha corrente teve HMOVE: 8 pixels a mais de blank
+
+    // Mostrar o "pente" do HMOVE, os 8 pixels apagados na borda esquerda das
+    // linhas que usam HMOVE. É comportamento legítimo do console — aparece na
+    // televisão de verdade — e por isso o padrão é mostrar. Mas num aparelho de
+    // tela pequena ele lê como defeito, então dá para desligar.
+    bool     hmove_pente;
     uint16_t collisions;     // os 15 bits de colisão, zerados por CXCLR
 
     // Uma escrita na TIA só surte efeito no color clock SEGUINTE. Medido nas
@@ -219,6 +225,9 @@ void tia_set_paddle(tia_t *t, int i, uint8_t pos);
 
 // Há pás espetadas no console? Com joystick, INPT0-3 leem 0.
 void tia_set_paddles_ligadas(tia_t *t, bool ligadas);
+
+// O pente do HMOVE na borda esquerda: fiel (true) ou escondido (false).
+void tia_set_pente_hmove(tia_t *t, bool mostrar);
 
 // Onde a TIA desenha. `linha0` é a primeira linha da varredura que aparece na
 // imagem e `linhas` a altura dela. Passar fb = NULL desliga o desenho (útil

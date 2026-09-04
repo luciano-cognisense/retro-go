@@ -179,6 +179,11 @@ void a26_set_paddle(a26_t *c, int i, uint8_t pos)
     tia_set_paddle(&c->tia, i, pos);
 }
 
+void a26_set_pente_hmove(a26_t *c, bool mostrar)
+{
+    tia_set_pente_hmove(&c->tia, mostrar);
+}
+
 void a26_set_paddles_ligadas(a26_t *c, bool ligadas)
 {
     tia_set_paddles_ligadas(&c->tia, ligadas);

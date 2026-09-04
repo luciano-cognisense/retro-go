@@ -130,15 +130,15 @@ int tia_copy_starts_at(uint8_t nusiz, int c)
 
 // -------------------------------------------- posição e movimento (parte 2b)
 
-int tia_respx_pos(int cc)
+int tia_respx_pos(int cc, bool jogador)
 {
     // Durante o HBLANK o contador ainda não começou a varrer a parte visível,
     // então o objeto cai na posição mínima — medido em hmove.bin e nusiz.bin:
     // pixel 3, nas 24 faixas das duas ROMs.
     if (cc < 68)
-        return TIA_RESP_MIN;
+        return jogador ? TIA_RESP_MIN : TIA_RESP_MIN_MB;
 
-    int x = cc - 68 + TIA_RESP_ATRASO;
+    int x = cc - 68 + (jogador ? TIA_RESP_ATRASO : TIA_RESP_ATRASO_MB);
     return x % 160;
 }
 

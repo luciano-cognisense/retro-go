@@ -44,6 +44,11 @@ void tia_set_paddle(tia_t *t, int i, uint8_t pos)
         t->paddle[i] = pos;
 }
 
+void tia_set_pente_hmove(tia_t *t, bool mostrar)
+{
+    t->hmove_pente = mostrar;
+}
+
 void tia_set_paddles_ligadas(tia_t *t, bool ligadas)
 {
     t->pa_ligada = ligadas;
@@ -66,6 +71,7 @@ void tia_reset(tia_t *t)
 
     memset(t, 0, sizeof(*t));
     t->rdy = true;
+    t->hmove_pente = true;
     t->cache_sujo = true;                // o memset zerou o cache junto
     t->inpt[4] = t->inpt[5] = 0x80;      // gatilhos soltos
     tia_audio_reset(&t->audio);
@@ -411,7 +417,7 @@ static void desenha_faixa(tia_t *t, int c0, int n)
     // primeiros pixels saem apagados, e não com a cor de fundo. É o "pente"
     // que aparece na borda esquerda de tantos jogos. Medido nas 16 faixas de
     // hmove.bin — 8 pixels, exatos.
-    if (t->hmove_line && x0 < TIA_HMOVE_BLANK) {
+    if (t->hmove_pente && t->hmove_line && x0 < TIA_HMOVE_BLANK) {
         int corte = x1 < TIA_HMOVE_BLANK ? x1 : TIA_HMOVE_BLANK;
         if (linha)
             memset(linha + x0, 0, (size_t)(corte - x0));
@@ -623,7 +629,7 @@ static void aplica_escrita(tia_t *t, uint16_t addr, uint8_t val)
     case RESP0: case RESP1: case RESM0: case RESM1: case RESBL: {
         static const uint8_t IDX[5] = { OBJ_P0, OBJ_P1, OBJ_M0, OBJ_M1, OBJ_BL };
         int i = IDX[(addr & 0x3F) - RESP0];
-        uint8_t nova = (uint8_t)tia_respx_pos(t->clock);
+        uint8_t nova = (uint8_t)tia_respx_pos(t->clock, i == OBJ_P0 || i == OBJ_P1);
 
         // Jogar o contador para onde ele já está não é evento nenhum: o
         // hardware não vê diferença nenhuma e a linha sai igual à anterior.

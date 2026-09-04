@@ -74,9 +74,11 @@ static const char *SETTING_SISTEMA = "sistema";     // 0 = NTSC, 1 = PAL
 static const char *SETTING_DIFIC_P0 = "dificP0";
 static const char *SETTING_DIFIC_P1 = "dificP1";
 static const char *SETTING_CONTROLE = "controle";   // 0 = joystick, 1 = pá
+static const char *SETTING_PENTE = "pente";         // 0 = fiel, 1 = escondido
 static int sistema_video;
 static int dific_p0, dific_p1;
 static int controle_pa;
+static int esconde_pente;
 
 // A raquete virtual. O aparelho tem um direcional de oito posições e o jogo
 // espera um potenciômetro; a conversão é integrar a direção no tempo. A
@@ -170,6 +172,23 @@ static rg_gui_event_t sistema_cb(rg_gui_option_t *opt, rg_gui_event_t event)
     return RG_DIALOG_VOID;
 }
 
+// O "pente" do HMOVE: os oito pixels apagados na borda esquerda das linhas em
+// que o jogo usa HMOVE para mover objetos. É comportamento legítimo do console
+// — aparece na televisão de verdade, e o River Raid e o Space Invaders fazem
+// isso em linha sim, linha não. Mas numa tela de 2,4 polegadas aquilo lê como
+// defeito, então quem quiser pode desligar. O padrão é fiel.
+static rg_gui_event_t pente_cb(rg_gui_option_t *opt, rg_gui_event_t event)
+{
+    if (event == RG_DIALOG_PREV || event == RG_DIALOG_NEXT) {
+        esconde_pente = !esconde_pente;
+        rg_settings_set_number(NS_APP, SETTING_PENTE, esconde_pente);
+        a26_set_pente_hmove(&console, esconde_pente == 0);
+        return RG_DIALOG_REDRAW;
+    }
+    strcpy(opt->value, esconde_pente ? "Hidden" : "Faithful");
+    return RG_DIALOG_VOID;
+}
+
 // Joystick ou pá. Não dá para adivinhar pelo jogo: nada na ROM diz qual
 // controle ela espera, e vários títulos aceitam os dois. Então é escolha de
 // quem joga — e sem ela metade do catálogo de 1977 a 1980 não funciona.
@@ -217,6 +236,7 @@ static void options_handler(rg_gui_option_t *dest)
     *dest++ = (rg_gui_option_t){0, _("TV system"), "-", RG_DIALOG_FLAG_NORMAL, &sistema_cb};
     *dest++ = (rg_gui_option_t){0, _("Difficulty P1"), "-", RG_DIALOG_FLAG_NORMAL, &dific_p0_cb};
     *dest++ = (rg_gui_option_t){0, _("Difficulty P2"), "-", RG_DIALOG_FLAG_NORMAL, &dific_p1_cb};
+    *dest++ = (rg_gui_option_t){0, _("HMOVE bar"), "-", RG_DIALOG_FLAG_NORMAL, &pente_cb};
     *dest++ = (rg_gui_option_t)RG_DIALOG_END;
 }
 
@@ -249,6 +269,7 @@ void a26_main(void)
     dific_p0 = rg_settings_get_number(NS_APP, SETTING_DIFIC_P0, 0);
     dific_p1 = rg_settings_get_number(NS_APP, SETTING_DIFIC_P1, 0);
     controle_pa = rg_settings_get_number(NS_APP, SETTING_CONTROLE, 0);
+    esconde_pente = rg_settings_get_number(NS_APP, SETTING_PENTE, 0);
     RG_LOGI("a26: opcoes lidas (sistema=%d dif=%d/%d controle=%s)",
             sistema_video, dific_p0, dific_p1, controle_pa ? "pa" : "joystick");
 
@@ -277,6 +298,7 @@ void a26_main(void)
         RG_PANIC("Unsupported cartridge bankswitching scheme!");
 
     a26_set_paddles_ligadas(&console, controle_pa != 0);
+    a26_set_pente_hmove(&console, esconde_pente == 0);
 
     // %zu não é usado de propósito: o alvo compila com CONFIG_NEWLIB_NANO_FORMAT,
     // e a implementação reduzida de printf não cobre todos os modificadores de
