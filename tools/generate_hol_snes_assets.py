@@ -39,7 +39,13 @@ def pixel_text(draw: ImageDraw.ImageDraw, xy: tuple[int, int], text: str, scale:
         x += 6 * scale
 
 
-def controller(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], stroke: int, color: tuple[int, int, int]) -> None:
+def controller(
+    draw: ImageDraw.ImageDraw,
+    box: tuple[int, int, int, int],
+    stroke: int,
+    color: tuple[int, int, int],
+    accent: tuple[int, int, int],
+) -> None:
     x0, y0, x1, y1 = box
     radius = max(6, (y1 - y0) // 3)
     for inset in range(stroke):
@@ -55,18 +61,21 @@ def controller(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], stroke
         draw.arc((right - r * 2, bottom - r * 2, right, bottom), 0, 90, fill=color)
 
     center_y = (y0 + y1) // 2
-    dpad_x = x0 + (x1 - x0) * 28 // 100
-    arm = max(3, (y1 - y0) // 7)
-    length = max(9, (y1 - y0) // 3)
+    dpad_x = x0 + (x1 - x0) * 30 // 100
+    arm = max(1, (y1 - y0) // 24)
+    length = max(5, (y1 - y0) // 6)
     draw.rectangle((dpad_x - arm, center_y - length, dpad_x + arm, center_y + length), fill=color)
     draw.rectangle((dpad_x - length, center_y - arm, dpad_x + length, center_y + arm), fill=color)
 
-    button_x = x0 + (x1 - x0) * 76 // 100
-    button_r = max(2, (y1 - y0) // 11)
-    gap = button_r * 3
+    button_x = x0 + (x1 - x0) * 77 // 100
+    button_r = max(1, (y1 - y0) // 18)
+    button_stroke = max(1, stroke // 2)
+    gap = button_r * 2 + 2
     for dx, dy in ((0, -gap), (gap, 0), (0, gap), (-gap, 0)):
+        button_color = accent if (dx, dy) == (gap, 0) else color
         draw.ellipse((button_x + dx - button_r, center_y + dy - button_r,
-                      button_x + dx + button_r, center_y + dy + button_r), outline=color, width=stroke)
+                      button_x + dx + button_r, center_y + dy + button_r),
+                     outline=button_color, width=button_stroke)
 
     dash_y = center_y + max(4, (y1 - y0) // 8)
     dash_x = x0 + (x1 - x0) * 48 // 100
@@ -88,8 +97,7 @@ def make_background() -> None:
         for x in range(8, 320, 16):
             draw.point((x, y), fill=PALE_GRID)
 
-    controller(draw, (150, 104, 306, 198), 5, PALE_BLUE)
-    draw.rectangle((284, 181, 291, 188), fill=AMBER)
+    controller(draw, (150, 104, 306, 198), 4, PALE_BLUE, AMBER)
     draw.line((16, 220, 104, 220), fill=PALE_BLUE, width=3)
     draw.rectangle((16, 216, 21, 224), fill=AMBER)
     save_indexed(image, "background_snes.png")
@@ -110,8 +118,7 @@ def make_banner() -> None:
 def make_logo() -> None:
     image = Image.new("RGB", (46, 50), MAGENTA)
     draw = ImageDraw.Draw(image)
-    controller(draw, (2, 10, 43, 39), 3, NAVY)
-    draw.rectangle((35, 27, 38, 30), fill=AMBER)
+    controller(draw, (2, 10, 43, 39), 2, NAVY, AMBER)
     save_indexed(image, "logo_snes.png")
 
 
