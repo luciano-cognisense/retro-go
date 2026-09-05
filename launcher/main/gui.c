@@ -7,8 +7,10 @@
 
 #define HEADER_HEIGHT       (50)
 #define LOGO_WIDTH          (46)
-#define PREVIEW_HEIGHT      ((int)(gui.height * 0.70f))
-#define PREVIEW_WIDTH       ((int)(gui.width * 0.50f))
+#define PREVIEW_PANEL_WIDTH ((int)(gui.width * 0.40f))
+#define PREVIEW_PADDING     (4)
+#define PREVIEW_HEIGHT      ((int)(gui.height * 0.55f))
+#define PREVIEW_WIDTH       (PREVIEW_PANEL_WIDTH - PREVIEW_PADDING * 2)
 
 #define C_HANDS_ON_LAB_BACKGROUND 0xFFBD
 #define C_HANDS_ON_LAB_FOREGROUND 0x1149
@@ -408,9 +410,21 @@ void gui_draw_preview(tab_t *tab)
 {
     if (tab->preview)
     {
-        int height = RG_MIN(tab->preview->height, PREVIEW_HEIGHT);
         int width = RG_MIN(tab->preview->width, PREVIEW_WIDTH);
-        rg_gui_draw_image(-width, -height, width, height, true, tab->preview);
+        int height = tab->preview->height * width / tab->preview->width;
+        if (height > PREVIEW_HEIGHT)
+        {
+            height = PREVIEW_HEIGHT;
+            width = tab->preview->width * height / tab->preview->height;
+        }
+
+        int panel_x = gui.width - PREVIEW_PANEL_WIDTH;
+        int x = panel_x + (PREVIEW_PANEL_WIDTH - width) / 2;
+        int y = HEADER_HEIGHT + (gui.height - HEADER_HEIGHT - height) / 2;
+
+        rg_gui_draw_rect(x - 2, y - 2, width + 4, height + 4, 2,
+                         C_HANDS_ON_LAB_FOREGROUND, C_HANDS_ON_LAB_BACKGROUND);
+        rg_gui_draw_image(x, y, width, height, true, tab->preview);
     }
 }
 
@@ -506,6 +520,7 @@ void gui_draw_list(tab_t *tab)
     rg_color_t bg[2] = {gui.theme->list.standard_bg, gui.theme->list.selected_bg};
 
     const listbox_t *list = &tab->listbox;
+    int list_width = tab->preview ? gui.width - PREVIEW_PANEL_WIDTH - PREVIEW_PADDING : gui.width;
     int line_height, top = HEADER_HEIGHT + 6;
     int lines = max_visible_lines(tab, &line_height);
     int line_offset = 0;
@@ -514,7 +529,7 @@ void gui_draw_list(tab_t *tab)
     {
         char buffer[64];
         snprintf(buffer, 63, "[%s]",  tab->navpath);
-        top += rg_gui_draw_text(0, top, gui.width, buffer, gui.theme->foreground, C_TRANSPARENT, 0).height;
+        top += rg_gui_draw_text(0, top, list_width, buffer, gui.theme->foreground, C_TRANSPARENT, 0).height;
     }
 
     top += ((gui.height - top) - (lines * line_height)) / 2;
@@ -533,7 +548,10 @@ void gui_draw_list(tab_t *tab)
         int idx = line_offset + i;
         int selected = idx == list->cursor;
         char *label = (idx >= 0 && idx < list->length) ? list->items[idx].text : "";
-        top += rg_gui_draw_text(0, top, gui.width, label, fg[selected], bg[selected], 0).height;
+        int row_top = top;
+        top += rg_gui_draw_text(0, top, list_width, label, fg[selected], bg[selected], 0).height;
+        if (selected)
+            rg_gui_draw_rect(0, row_top, 3, line_height, 0, 0, C_GOLDEN_ROD);
     }
 }
 
