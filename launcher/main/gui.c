@@ -16,6 +16,7 @@
 #define C_HANDS_ON_LAB_FOREGROUND 0x1149
 
 retro_gui_t gui;
+static rg_image_t *systems_background;
 
 #define SETTING_SELECTED_TAB    "SelectedTab"
 #define SETTING_START_SCREEN    "StartScreen"
@@ -239,6 +240,7 @@ void gui_update_theme(void)
         rg_surface_free(tab->banner), tab->banner = NULL;
         rg_surface_free(tab->logo), tab->logo = NULL;
     }
+    rg_surface_free(systems_background), systems_background = NULL;
 }
 
 void gui_save_config(void)
@@ -397,13 +399,58 @@ void gui_redraw(void)
     }
     else
     {
-        gui_draw_background(tab, 0);
-        gui_draw_header(tab, 0);
-        // gui_draw_tab_indicator();
+        gui_draw_system_selector();
     }
 
     rg_gui_set_surface(NULL);
     rg_display_submit(gui.surface, 0);
+}
+
+void gui_draw_system_selector(void)
+{
+    if (!systems_background)
+        systems_background = gui_get_image("background", "systems");
+
+    if (systems_background)
+        rg_gui_draw_image(0, 0, gui.width, gui.height, false, systems_background);
+    else
+        rg_gui_draw_rect(0, 0, gui.width, gui.height, 0, 0, C_HANDS_ON_LAB_BACKGROUND);
+
+    // The supplied artwork is definitive. Only its original labels are covered;
+    // the hardware illustration and technical frame remain untouched.
+    const int list_width = gui.width / 2;
+    rg_gui_draw_rect(7, 61, list_width - 7, gui.height - 82,
+                     0, 0, C_HANDS_ON_LAB_BACKGROUND);
+
+    int enabled[RG_COUNT(gui.tabs)];
+    int enabled_count = 0;
+    int selected = 0;
+    for (int i = 0; i < gui.tabs_count; ++i)
+    {
+        if (!gui.tabs[i]->enabled)
+            continue;
+        if (i == gui.selected_tab)
+            selected = enabled_count;
+        enabled[enabled_count++] = i;
+    }
+
+    const int max_lines = 7;
+    const int visible = RG_MIN(enabled_count, max_lines);
+    int first = selected - visible / 2;
+    first = RG_MAX(0, RG_MIN(first, enabled_count - visible));
+    const int line_height = TEXT_RECT("ABC123", 0).height;
+    int top = (gui.height - visible * line_height) / 2;
+
+    for (int line = 0; line < visible; ++line)
+    {
+        int tab_index = enabled[first + line];
+        bool is_selected = tab_index == gui.selected_tab;
+        rg_color_t foreground = is_selected ? C_HANDS_ON_LAB_BACKGROUND : C_HANDS_ON_LAB_FOREGROUND;
+        rg_color_t background = is_selected ? C_HANDS_ON_LAB_FOREGROUND : C_TRANSPARENT;
+        rg_gui_draw_text(12, top, list_width - 18, gui.tabs[tab_index]->desc,
+                         foreground, background, RG_TEXT_ALIGN_LEFT);
+        top += line_height;
+    }
 }
 
 void gui_draw_preview(tab_t *tab)
