@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "applications.h"
+#include "boot_sound.h"
 #include "bookmarks.h"
 #include "browser.h"
 #include "gui.h"
@@ -208,7 +209,8 @@ static void show_splash(void)
     rg_gui_set_surface(NULL);
     rg_display_submit(gui.surface, 0);
 
-    rg_task_delay(1500);
+    // Keep the splash visible through the 2.24-second C3 boot signature.
+    rg_task_delay(2250);
     rg_surface_free(splash);
 }
 
@@ -479,7 +481,9 @@ static void about_handler(rg_gui_option_t *dest)
 void app_main(void)
 {
     app = rg_system_init(&(const rg_config_t){
-        .sampleRate = 32000,
+        // C3 is stored as mono signed 16-bit PCM at 22050 Hz. Emulator apps
+        // select their own rate when launched, so this only affects launcher audio.
+        .sampleRate = 22050,
         .frameRate = 0,
         .storageRequired = true,
         .isLauncher = true,
@@ -491,6 +495,11 @@ void app_main(void)
         .mallocAlwaysInternal = 1024,
     });
     app->configNs = "launcher";
+
+    // Play only on a real power-on/reset. Returning from an emulator causes a
+    // warm launcher boot and should not repeat the brand signature.
+    if (app->isColdBoot)
+        boot_sound_play_c3();
 
     rg_storage_mkdir(RG_BASE_PATH_CACHE);
     rg_storage_mkdir(RG_BASE_PATH_CONFIG);
