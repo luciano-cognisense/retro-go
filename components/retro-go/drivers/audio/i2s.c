@@ -71,9 +71,6 @@ static bool driver_init(int device, int sample_rate)
             .intr_alloc_flags = 0, // ESP_INTR_FLAG_LEVEL1
             .dma_buf_count = DMA_BUFFER_COUNT,
             .dma_buf_len = DMA_BUFFER_LEN,
-            // Output silence if the producer pauses or finishes (e.g. boot sound),
-            // instead of replaying stale PCM from the DMA ring.
-            .tx_desc_auto_clear = true,
         #if CONFIG_IDF_TARGET_ESP32
             .use_apll = true, // External DAC may care about accuracy
         #endif
@@ -178,9 +175,8 @@ static bool driver_submit(const rg_audio_frame_t *frames, size_t count)
         // Queue
         buffer[pos].left = left;
         buffer[pos].right = right;
-        ++pos;
 
-        if (pos == RG_COUNT(buffer) || i == count - 1)
+        if (i == count - 1 || ++pos == RG_COUNT(buffer))
         {
             size_t written;
             if (i2s_write(I2S_NUM_0, (void *)buffer, pos * 4, &written, 1000) != ESP_OK)
