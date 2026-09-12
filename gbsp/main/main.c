@@ -1,4 +1,5 @@
 #include <rg_system.h>
+#include <esp_heap_caps.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -52,11 +53,22 @@ static const char *SETTING_PROFILE = "Profile";
 
 static int profileEnabled = 1;
 static bool profileHeaderWritten = false;
+// Internal RAM available right before we try to place iwram there. Logged in
+// the profile header so a failed placement says how much was missing.
+static int internalFreeKB = 0, internalBlockKB = 0;
 static struct
 {
     int frames, drawn;
     int64_t input, emu, video, audio, total;
+    int64_t rtcStart;
 } profile;
+
+// The RTC clock is the only timebase on this chip that overclocking does not
+// skew -- rg_system_set_overclock() itself relies on it for that reason, and
+// measurements showed rg_system_timer() (esp_timer) speeding up with the PLL,
+// which would hide the very gains we are measuring. So: the window's wall time
+// comes from the RTC, and the per-phase esp_timer deltas are scaled to it.
+extern uint64_t esp_rtc_get_time_us(void);
 
 void netpacket_poll_receive()
 {
@@ -88,26 +100,48 @@ static void profile_flush(void)
     {
         // One header per session so the lines below can be attributed to a
         // build/configuration when comparing experiments.
-        fprintf(fp, "\n=== gbsp %s | %s | overclock %d | mem %p ===\n",
+        // 0x3fc.../0x3fd... is internal SRAM on the S3, 0x3c... is PSRAM.
+        fprintf(fp, "\n=== gbsp %s | %s | iwram %s | fb %s | cache de ROM %dMB"
+                    " | RAM interna no boot: %dKB livre, maior bloco %dKB ===\n",
                 app->version ? app->version : "?",
                 app->romPath ? rg_basename(app->romPath) : "?",
-                rg_system_get_overclock(), (void *)gbsp_memory);
+                ((u32)iwram_ptr >> 24) == 0x3c ? "PSRAM" : "interna",
+                ((u32)currentUpdate->data >> 24) == 0x3c ? "PSRAM" : "interna",
+                (int)gamepak_buffer_count, internalFreeKB, internalBlockKB);
         profileHeaderWritten = true;
     }
 
     rg_stats_t stats = rg_system_get_stats();
     int n = profile.frames;
 
-    fprintf(fp, "%d quadros: %d desenhados, %d pulados | entrada %d | emu %d | video %d"
-                " | audio %d | total %d us | %d qps | vel %d%% | ocupado %d%%\n",
+    // Scale the measured phases so they add up to the window's real duration
+    // (see the esp_rtc_get_time_us note above). "clk" in the line below is the
+    // ratio we observed: 1.00 means esp_timer agreed with the RTC, anything
+    // higher means it was running fast -- which is what overclocking does here.
+    int mhz = rg_system_get_cpu_speed();
+    int64_t realWindow = (int64_t)esp_rtc_get_time_us() - profile.rtcStart;
+    double clk = (profile.total > 0 && realWindow > 0) ? (double)realWindow / profile.total : 1.0;
+    double toRealUs = clk / n;
+
+    fprintf(fp, "%d quadros: %d desenhados, %d pulados | oc %d (%dMHz) | skip %d | entrada %d"
+                " | emu %d | rom %d (%d faults) | video %d | audio %d | total %d us"
+                " | %d qps | clk %d.%02d | vel %d%% | ocupado %d%%\n",
             n, profile.drawn, n - profile.drawn,
-            (int)(profile.input / n), (int)(profile.emu / n), (int)(profile.video / n),
-            (int)(profile.audio / n), (int)(profile.total / n),
-            (int)(profile.total ? (1000000LL * n / profile.total) : 0),
+            rg_system_get_overclock(), mhz, (int)app->frameskip,
+            (int)(profile.input * toRealUs), (int)(profile.emu * toRealUs),
+            (int)(gamepak_page_time * toRealUs), (int)gamepak_page_faults,
+            (int)(profile.video * toRealUs), (int)(profile.audio * toRealUs),
+            (int)(profile.total * toRealUs),
+            (int)(profile.total ? (1000000.0 / (profile.total * toRealUs)) : 0),
+            (int)(clk + 0.005), (int)((clk + 0.005 - (int)(clk + 0.005)) * 100),
             (int)(stats.speedPercent + 0.5f), (int)(stats.busyPercent + 0.5f));
 
     fclose(fp);
     memset(&profile, 0, sizeof(profile));
+    // "rom" is a slice of "emu", not a sibling: the page faults happen inside
+    // execute_arm(). Reset per window like everything else.
+    gamepak_page_faults = 0;
+    gamepak_page_time = 0;
 }
 
 // Forget any pending write: the backup in memory and the .sram file agree.
@@ -316,8 +350,23 @@ static void options_handler(rg_gui_option_t *dest)
     *dest++ = (rg_gui_option_t)RG_DIALOG_END;
 }
 
+// Claim iwram before anything else in this app runs. Measured after
+// rg_system_init(), the largest contiguous internal block is 31KB -- one
+// kilobyte short of the 32KB iwram needs, with 112KB internal still free but
+// fragmented. Before it, the heap has not been carved up by the system's tasks,
+// drivers and buffers yet. heap_caps_calloc() directly rather than rg_alloc(),
+// because rg_alloc logs through a system that is not up at this point.
+static void claim_iwram(void)
+{
+    internalFreeKB = heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024;
+    internalBlockKB = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024;
+    iwram_ptr = heap_caps_calloc(1, IWRAM_BYTES, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+}
+
 void app_main(void)
 {
+    claim_iwram();
+
     app = rg_system_init(&(const rg_config_t){
         .sampleRate = AUDIO_SAMPLE_RATE,
         .frameRate = 60,
@@ -342,6 +391,15 @@ void app_main(void)
     if (!rg_storage_mkdir(rg_dirname(sramFile)))
         RG_LOGE("Unable to create SRAM folder...");
 
+    // iwram in PSRAM is the fallback, not the plan: claim_iwram() above already
+    // tried internal RAM before anything else in this app ran.
+    if (!iwram_ptr)
+    {
+        RG_LOGW("No internal RAM for iwram (%dKB free, largest block %dKB), using PSRAM",
+                internalFreeKB, internalBlockKB);
+        iwram_ptr = rg_alloc(IWRAM_BYTES, MEM_ANY);
+    }
+
     updates[0] = rg_surface_create(GBA_SCREEN_WIDTH, GBA_SCREEN_HEIGHT + 1, RG_PIXEL_565_LE, MEM_FAST);
     updates[0]->height = GBA_SCREEN_HEIGHT;
     // updates[1] = rg_surface_create(GBA_SCREEN_WIDTH, GBA_SCREEN_HEIGHT + 1, RG_PIXEL_565_LE, MEM_FAST);
@@ -351,7 +409,7 @@ void app_main(void)
     gba_screen_pixels = currentUpdate->data;
 
     gbsp_memory = rg_alloc(sizeof(*gbsp_memory), MEM_ANY);
-    RG_LOGI("gbsp_memory=%p", gbsp_memory);
+    RG_LOGI("gbsp_memory=%p iwram=%p fb=%p", gbsp_memory, iwram_ptr, currentUpdate->data);
 
     // init_gamepak_buffer() below allocates 1MB blocks in a loop until malloc
     // fails, i.e. it deliberately takes the whole heap for ROM paging. Any
@@ -461,6 +519,8 @@ void app_main(void)
 
         if (profileEnabled)
         {
+            if (profile.frames == 0)
+                profile.rtcStart = (int64_t)esp_rtc_get_time_us();
             profile.input += afterInput - startTime;
             profile.emu += afterEmu - afterInput;
             profile.video += afterVideo - afterEmu;

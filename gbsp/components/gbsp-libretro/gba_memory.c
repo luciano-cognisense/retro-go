@@ -343,6 +343,10 @@ const u8 *bios_rom = open_gba_bios_rom; // [1024 * 16];
 #ifndef RETRO_GO
 // Up to 128kb, store SRAM, flash ROM, or EEPROM here.
 u8 gamepak_backup[1024 * 128];
+#else
+// Points at the 32KB of GBA internal work RAM. Allocated by the frontend so it
+// can ask for internal RAM; see gba_memory.h and gbsp/main/main.c.
+u8 *iwram_ptr = NULL;
 #endif
 
 u32 dma_bus_val;
@@ -2199,10 +2203,18 @@ static u32 evict_gamepak_page(void)
   return ret;
 }
 
+u32 gamepak_page_faults = 0;
+u32 gamepak_page_time = 0;
+
 u8 *load_gamepak_page(u32 physical_index)
 {
   if(physical_index >= (gamepak_size >> 15))
     return &gamepak_buffers[0][0];
+
+#ifdef RETRO_GO
+  extern int64_t esp_timer_get_time(void);
+  const int64_t page_start = esp_timer_get_time();
+#endif
 
   u32 entry = evict_gamepak_page();
   u32 block_idx = entry / 32;
@@ -2221,6 +2233,11 @@ u8 *load_gamepak_page(u32 physical_index)
   // When mapping page 0, we might need to reflect the GPIO regs.
   if (physical_index == 0)
     update_gpio_romregs();
+
+#ifdef RETRO_GO
+  gamepak_page_time += (u32)(esp_timer_get_time() - page_start);
+  gamepak_page_faults++;
+#endif
 
   return swap_location;
 }
@@ -2287,7 +2304,7 @@ void init_memory(void)
   memset(io_registers, 0, sizeof(io_registers));
   memset(oam_ram, 0, sizeof(oam_ram));
   memset(palette_ram, 0, sizeof(palette_ram));
-  memset(iwram, 0, sizeof(iwram));
+  memset(iwram, 0, IWRAM_BYTES); // iwram is a pointer now, sizeof() would lie
   memset(ewram, 0, sizeof(ewram));
   memset(vram, 0, sizeof(vram));
 

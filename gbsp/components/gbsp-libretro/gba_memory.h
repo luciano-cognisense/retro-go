@@ -314,6 +314,13 @@ extern u32 backup_type;
 // unsaved data to flush to the .sram file, and a changing value means the game
 // is still writing right now.
 extern u32 gamepak_backup_dirty;
+
+// ROM paging cost. A page fault reads 32KB off the SD card from inside
+// execute_arm(), so it is charged to emulation time in the profile without
+// being emulation at all. Reset by the frontend after each profile window.
+extern u32 gamepak_page_faults;
+extern u32 gamepak_page_time;   // microseconds
+extern u32 gamepak_buffer_count; // 1MB blocks actually allocated for the ROM
 extern u32 sram_bankcount;
 extern u32 flash_bank_cnt;
 extern u32 eeprom_size;
@@ -348,7 +355,9 @@ typedef struct
   // TODO: Evaluate what is best left in internal memory for performance reasons (for the few that could fit)
   u8 vram[1024 * 96];
   u8 ewram[(1024 * 256) << SMC_DETECTION];
-  u8 iwram[(1024 * 32) << SMC_DETECTION];
+  // iwram is NOT here: it is the hottest buffer of the lot (the GBA's fast RAM,
+  // hit every few instructions) and the smallest, so the frontend allocates it
+  // separately and tries to place it in internal RAM. See main.c.
   // u8 *memory_map_read[8 * 1024];
   u8 gamepak_backup[1024 * 128];
   // There's also stuff from video.cpp to consider:
@@ -357,10 +366,13 @@ typedef struct
   // u8 obj_alpha_count[160];
 } gbsp_memory_t;
 
+#define IWRAM_BYTES ((1024 * 32) << SMC_DETECTION)
+
 extern gbsp_memory_t *gbsp_memory;
+extern u8 *iwram_ptr; // allocated by the frontend, internal RAM when possible
 #define vram gbsp_memory->vram
 #define ewram gbsp_memory->ewram
-#define iwram gbsp_memory->iwram
+#define iwram iwram_ptr
 // #define memory_map_read gbsp_memory->memory_map_read
 #define gamepak_backup gbsp_memory->gamepak_backup
 #endif
