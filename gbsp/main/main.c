@@ -26,10 +26,15 @@ static rg_surface_t *currentUpdate;
 static rg_app_t *app;
 
 static char *sramFile;
-static int autoSaveSRAM = 0;
+// Seconds of quiet (no cartridge writes) before the backup is flushed to the
+// .sram file. The kit is normally switched off at the power rail, which never
+// reaches RG_EVENT_SHUTDOWN, so this is the main safety net and it is on by
+// default. 0 disables it.
+static int autoSaveSRAM = 3;
 // Deadline in microseconds (0 = disarmed). Wall clock, not frames: gbsp runs
-// well below 60fps, so a frame counter would stretch the interval unpredictably.
+// well below 60fps, so a frame counter would stretch the delay unpredictably.
 static int64_t autoSaveSRAM_Timer = 0;
+static u32 lastBackupWrites = 0;
 static int sramSaveCount = 0;
 
 // Reserved at boot, before init_gamepak_buffer() eats the heap. See app_main().
@@ -37,6 +42,21 @@ static void *stateBuffer = NULL;
 
 static const char *SETTING_SOUND_EMULATION = "sound";
 static const char *SETTING_SAVESRAM = "SaveSRAM";
+static const char *SETTING_PROFILE = "Profile";
+
+// Performance log, same idea as the a26 core's a26-perfil.txt: one line every
+// PROFILE_FRAMES frames with where the time actually went. Reading SPEED% off
+// the menu only says how bad it is; this says which phase to attack.
+#define PROFILE_FRAMES 300
+#define PROFILE_FILE RG_BASE_PATH "/gbsp-perfil.txt"
+
+static int profileEnabled = 1;
+static bool profileHeaderWritten = false;
+static struct
+{
+    int frames, drawn;
+    int64_t input, emu, video, audio, total;
+} profile;
 
 void netpacket_poll_receive()
 {
@@ -49,6 +69,53 @@ void netpacket_send(uint16_t client_id, const void *buf, size_t len)
 static bool screenshot_handler(const char *filename, int width, int height)
 {
     return rg_surface_save_image_file(currentUpdate, filename, width, height);
+}
+
+static void profile_flush(void)
+{
+    if (profile.frames < 1)
+        return;
+
+    FILE *fp = fopen(PROFILE_FILE, "a");
+    if (!fp)
+    {
+        RG_LOGE("Could not open the profile log (%s)", PROFILE_FILE);
+        profile.frames = 0; // don't retry every 300 frames
+        return;
+    }
+
+    if (!profileHeaderWritten)
+    {
+        // One header per session so the lines below can be attributed to a
+        // build/configuration when comparing experiments.
+        fprintf(fp, "\n=== gbsp %s | %s | overclock %d | mem %p ===\n",
+                app->version ? app->version : "?",
+                app->romPath ? rg_basename(app->romPath) : "?",
+                rg_system_get_overclock(), (void *)gbsp_memory);
+        profileHeaderWritten = true;
+    }
+
+    rg_stats_t stats = rg_system_get_stats();
+    int n = profile.frames;
+
+    fprintf(fp, "%d quadros: %d desenhados, %d pulados | entrada %d | emu %d | video %d"
+                " | audio %d | total %d us | %d qps | vel %d%% | ocupado %d%%\n",
+            n, profile.drawn, n - profile.drawn,
+            (int)(profile.input / n), (int)(profile.emu / n), (int)(profile.video / n),
+            (int)(profile.audio / n), (int)(profile.total / n),
+            (int)(profile.total ? (1000000LL * n / profile.total) : 0),
+            (int)(stats.speedPercent + 0.5f), (int)(stats.busyPercent + 0.5f));
+
+    fclose(fp);
+    memset(&profile, 0, sizeof(profile));
+}
+
+// Forget any pending write: the backup in memory and the .sram file agree.
+static void sram_mark_clean(void)
+{
+    gamepak_backup_dirty = 0;
+    lastBackupWrites = 0;
+    autoSaveSRAM_Timer = 0;
 }
 
 // The cartridge backup (SRAM/flash/EEPROM) lives in a .sram file next to the
@@ -68,7 +135,7 @@ static bool sram_load(void)
     }
 
     RG_LOGI("SRAM loaded (%d bytes)", (int)buffer_len);
-    gamepak_backup_dirty = 0;
+    sram_mark_clean();
     return true;
 }
 
@@ -84,8 +151,7 @@ static bool sram_save(void)
     }
 
     RG_LOGI("SRAM saved");
-    gamepak_backup_dirty = 0;
-    autoSaveSRAM_Timer = 0;
+    sram_mark_clean();
     sramSaveCount++;
     return true;
 }
@@ -128,14 +194,17 @@ static bool load_state_handler(const char *filename)
         sram_load();
     }
 
-    autoSaveSRAM_Timer = 0;
+    // The autosave deadline is left alone on purpose: a save state does not
+    // touch gamepak_backup, so anything still unsaved stays unsaved and must
+    // keep its pending flush.
     return success;
 }
 
 static bool reset_handler(bool hard)
 {
+    if (gamepak_backup_dirty) // the backup survives reset_gba(), don't lose it
+        sram_save();
     reset_gba();
-    autoSaveSRAM_Timer = 0;
     return true;
 }
 
@@ -149,6 +218,7 @@ static void event_handler(int event, void *arg)
     {
         if (gamepak_backup_dirty)
             sram_save();
+        profile_flush();
     }
 }
 
@@ -204,8 +274,8 @@ static rg_gui_event_t sram_autosave_cb(rg_gui_option_t *option, rg_gui_event_t e
 }
 
 // Diagnostics: the serial monitor isn't usable while playing, so surface the
-// SRAM state in the options menu. "clean"/"dirty" is the backup flag, the
-// countdown is the autosave deadline, and the last number counts saves made.
+// SRAM state in the options menu. Shows the pending autosave countdown, or
+// clean/dirty when no flush is scheduled, plus saves made this session.
 static rg_gui_event_t sram_status_cb(rg_gui_option_t *option, rg_gui_event_t event)
 {
     if (autoSaveSRAM_Timer > 0)
@@ -220,11 +290,29 @@ static rg_gui_event_t sram_status_cb(rg_gui_option_t *option, rg_gui_event_t eve
     return RG_DIALOG_VOID;
 }
 
+static rg_gui_event_t profile_toggle_cb(rg_gui_option_t *option, rg_gui_event_t event)
+{
+    if (event == RG_DIALOG_PREV || event == RG_DIALOG_NEXT)
+    {
+        profileEnabled = !profileEnabled;
+        rg_settings_set_number(NS_APP, SETTING_PROFILE, profileEnabled);
+        if (!profileEnabled)
+            profile_flush(); // don't leave a partial window unwritten
+        else
+            memset(&profile, 0, sizeof(profile)); // start a clean window
+    }
+
+    strcpy(option->value, profileEnabled ? _("On") : _("Off"));
+
+    return RG_DIALOG_VOID;
+}
+
 static void options_handler(rg_gui_option_t *dest)
 {
     *dest++ = (rg_gui_option_t){0, _("Audio enable"),  "-", RG_DIALOG_FLAG_NORMAL, &sound_toggle_cb};
     *dest++ = (rg_gui_option_t){0, _("SRAM autosave"), "-", RG_DIALOG_FLAG_NORMAL, &sram_autosave_cb};
     *dest++ = (rg_gui_option_t){0, _("SRAM state"),    "-", RG_DIALOG_FLAG_NORMAL, &sram_status_cb};
+    *dest++ = (rg_gui_option_t){0, _("Profile log"),   "-", RG_DIALOG_FLAG_NORMAL, &profile_toggle_cb};
     *dest++ = (rg_gui_option_t)RG_DIALOG_END;
 }
 
@@ -247,7 +335,8 @@ void app_main(void)
     // rg_system_set_overclock(2);
 
     sound_master_enable = rg_settings_get_number(NS_APP, SETTING_SOUND_EMULATION, true);
-    autoSaveSRAM = (int)rg_settings_get_number(NS_APP, SETTING_SAVESRAM, 0);
+    autoSaveSRAM = (int)rg_settings_get_number(NS_APP, SETTING_SAVESRAM, autoSaveSRAM);
+    profileEnabled = (int)rg_settings_get_number(NS_APP, SETTING_PROFILE, profileEnabled);
 
     sramFile = rg_emu_get_path(RG_PATH_SAVE_SRAM, app->romPath);
     if (!rg_storage_mkdir(rg_dirname(sramFile)))
@@ -314,6 +403,7 @@ void app_main(void)
             {
                 if (gamepak_backup_dirty) // save in case the user quits
                     sram_save();
+                profile_flush(); // the kit is often powered off right after this
                 rg_gui_game_menu();
             }
             else
@@ -325,32 +415,61 @@ void app_main(void)
         update_input();
         rumble_frame_reset();
         clear_gamepak_stickybits();
+        const int64_t afterInput = rg_system_timer();
+
         execute_arm(execute_cycles);
         // RG_TIMER_LAP("execute_arm");
+        const int64_t afterEmu = rg_system_timer();
 
-        if (autoSaveSRAM > 0)
-        {
-            if (autoSaveSRAM_Timer == 0)
-            {
-                if (gamepak_backup_dirty)
-                    autoSaveSRAM_Timer = rg_system_timer() + (int64_t)autoSaveSRAM * 1000000;
-            }
-            else if (rg_system_timer() >= autoSaveSRAM_Timer)
-            {
-                sram_save();
-            }
-        }
-
-        if (!skip_next_frame)
+        const bool drawnFrame = !skip_next_frame;
+        if (drawnFrame)
             rg_display_submit(currentUpdate, 0);
+        const int64_t afterVideo = rg_system_timer();
 
         size_t frames_count = sound_read_samples((s16 *)mixbuffer, AUDIO_BUFFER_LENGTH);
         // RG_TIMER_LAP("sound_read_samples");
 
         rg_system_tick(rg_system_timer() - startTime);
 
+        // Note: rg_system_tick() only accounts, it never sleeps. Nothing here
+        // paces the loop except rg_audio_submit() blocking when the audio
+        // buffer is full -- so a large "audio" figure in the log means we are
+        // waiting on audio (running fast enough), and a near-zero one means
+        // emulation is the wall.
         rg_audio_submit(mixbuffer, frames_count);
         // RG_TIMER_LAP("rg_audio_submit");
+        const int64_t afterAudio = rg_system_timer();
+
+        // Autosave, debounced: every cartridge write pushes the deadline back,
+        // so we only touch the card once the game has gone quiet. That keeps
+        // games that write constantly from hammering the SD card, and still
+        // gets the save out within seconds of the player saving in-game --
+        // which matters because the kit is switched off at the power rail.
+        // Kept outside the timed section so a card write doesn't skew the log.
+        if (autoSaveSRAM > 0)
+        {
+            if (gamepak_backup_dirty != lastBackupWrites)
+            {
+                lastBackupWrites = gamepak_backup_dirty;
+                autoSaveSRAM_Timer = rg_system_timer() + (int64_t)autoSaveSRAM * 1000000;
+            }
+            else if (autoSaveSRAM_Timer && rg_system_timer() >= autoSaveSRAM_Timer)
+            {
+                sram_save();
+            }
+        }
+
+        if (profileEnabled)
+        {
+            profile.input += afterInput - startTime;
+            profile.emu += afterEmu - afterInput;
+            profile.video += afterVideo - afterEmu;
+            profile.audio += afterAudio - afterVideo;
+            profile.total += afterAudio - startTime;
+            profile.drawn += drawnFrame ? 1 : 0;
+            if (++profile.frames >= PROFILE_FRAMES)
+                profile_flush();
+        }
 
         if (skip_next_frame == 0)
             skip_next_frame = app->frameskip;
