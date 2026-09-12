@@ -387,6 +387,11 @@ u32 gbc_sound_wave_update = 0;
 
 u32 backup_type = BACKUP_UNKN;
 u32 backup_type_reset = BACKUP_UNKN;
+// Incremented on every write to gamepak_backup, cleared by the frontend after
+// it flushes the backup to the .sram file. It counts rather than just flags so
+// the frontend can tell "still writing" from "went quiet" and debounce its
+// autosave (see gbsp/main/main.c).
+u32 gamepak_backup_dirty = 0;
 u32 flash_mode = FLASH_BASE_MODE;
 u32 flash_command_position = 0;
 u32 flash_bank_num;  // 0 or 1
@@ -536,6 +541,7 @@ void function_cc write_eeprom(u32 unused_address, u32 value)
         {
           eeprom_mode = EEPROM_WRITE_MODE;
           memset(gamepak_backup + eeprom_address, 0, 8);
+          gamepak_backup_dirty++;
         }
       }
       break;
@@ -1102,6 +1108,7 @@ void function_cc write_backup(u32 address, u32 value)
           if(flash_mode == FLASH_ERASE_MODE)
           {
             memset(gamepak_backup, 0xFF, 1024 * 128);
+            gamepak_backup_dirty++;
             flash_mode = FLASH_BASE_MODE;
           }
           break;
@@ -1112,7 +1119,10 @@ void function_cc write_backup(u32 address, u32 value)
       flash_command_position = 0;
     }
     if(backup_type == BACKUP_SRAM)
+    {
       gamepak_backup[0x5555] = value;
+      gamepak_backup_dirty++;
+    }
   }
   else
 
@@ -1127,6 +1137,7 @@ void function_cc write_backup(u32 address, u32 value)
       // Erase sector
       u32 fulladdr = (address & 0xF000) + 64*1024*flash_bank_num;
       memset(&gamepak_backup[fulladdr], 0xFF, 1024 * 4);
+      gamepak_backup_dirty++;
       flash_mode = FLASH_BASE_MODE;
       flash_command_position = 0;
     }
@@ -1146,6 +1157,7 @@ void function_cc write_backup(u32 address, u32 value)
       // Write value to flash ROM
       u32 fulladdr = address + 64*1024*flash_bank_num;
       gamepak_backup[fulladdr] = value;
+      gamepak_backup_dirty++;
       flash_mode = FLASH_BASE_MODE;
     }
     else
@@ -1154,6 +1166,7 @@ void function_cc write_backup(u32 address, u32 value)
     {
       // Write value to SRAM
       gamepak_backup[address] = value;
+      gamepak_backup_dirty++;
     }
   }
 }

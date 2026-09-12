@@ -310,6 +310,10 @@ extern u32 reg[64];
 #define FLASH_BANKSWITCH_MODE         4
 
 extern u32 backup_type;
+// Counts writes to gamepak_backup (SRAM/flash/EEPROM): non-zero means there is
+// unsaved data to flush to the .sram file, and a changing value means the game
+// is still writing right now.
+extern u32 gamepak_backup_dirty;
 extern u32 sram_bankcount;
 extern u32 flash_bank_cnt;
 extern u32 eeprom_size;
