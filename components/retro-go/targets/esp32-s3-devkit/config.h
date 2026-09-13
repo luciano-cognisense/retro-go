@@ -57,6 +57,14 @@
 #define RG_GPIO_SND_I2S_WS          GPIO_NUM_42
 #define RG_GPIO_SND_I2S_DATA        GPIO_NUM_40
 // #define RG_GPIO_SND_AMP_ENABLE      GPIO_NUM_18
+// Quadros no anel de DMA do I2S = COUNT * 180. O padrao 4 (720 quadros, ~22ms a
+// 32kHz) so serve para nucleo que segura 100%: o gbsp fica abaixo disso, o anel
+// esvazia e o hardware repete o ultimo descritor -- o zumbido. Com 16 sao 2880
+// quadros (~88ms), ao custo de ~11KB de RAM interna, e os segundos em que o
+// nucleo corre na frente pagam os segundos em que ele fica para tras. Medido no
+// Fire Red: janelas com falta de audio caem de 11 para 5 em 35. Se a latencia
+// incomodar em algum jogo, 8 da 44ms e 5.6KB.
+#define RG_AUDIO_DMA_BUFFER_COUNT   16
 
 
 /****************************************************************************

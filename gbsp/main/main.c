@@ -10,7 +10,16 @@
 #include "../components/gbsp-libretro/gba_cc_lut.h"
 
 #define AUDIO_SAMPLE_RATE (GBA_SOUND_FREQUENCY)
-#define AUDIO_BUFFER_LENGTH (AUDIO_SAMPLE_RATE / 60 + 1)
+// A GBA frame is 280896 CPU ticks and the core emits one sample every 512 of
+// them (sound.c: buffer_ticks = tick_delta * sound_frequency / GBC_BASE_RATE),
+// so a frame carries 548.6 samples -- not the 547 this used to ask for. Asking
+// for fewer than the core produces leaves a backlog growing by ~1.6 samples per
+// frame inside its 1024-frame ring, and that ring has no overflow check: once
+// the write index laps the read index, (index - base) & MASK wraps to near zero
+// and the next read returns almost nothing. Asking for more costs nothing --
+// sound_read_samples() clamps to what is actually available -- so ask for a
+// frame's worth at 50fps and let the clamp decide.
+#define AUDIO_BUFFER_LENGTH (AUDIO_SAMPLE_RATE / 50)
 
 u32 idle_loop_target_pc = 0xFFFFFFFF;
 u32 translation_gate_target_pc[MAX_TRANSLATION_GATES];
@@ -44,6 +53,7 @@ static void *stateBuffer = NULL;
 static const char *SETTING_SOUND_EMULATION = "sound";
 static const char *SETTING_SAVESRAM = "SaveSRAM";
 static const char *SETTING_PROFILE = "Profile";
+static const char *SETTING_AUDIO_SYNC = "AudioSync";
 
 // Performance log, same idea as the a26 core's a26-perfil.txt: one line every
 // PROFILE_FRAMES frames with where the time actually went. Reading SPEED% off
@@ -69,6 +79,134 @@ static struct
 // which would hide the very gains we are measuring. So: the window's wall time
 // comes from the RTC, and the per-phase esp_timer deltas are scaled to it.
 extern uint64_t esp_rtc_get_time_us(void);
+
+// Audio sync.
+//
+// The core produces sound on the GBA's clock, not on the wall clock: one
+// emulated frame always yields ~548 samples, so 60fps is 32768 samples per real
+// second and 35fps is only ~19200. The DAC does not care -- the I2S clock keeps
+// consuming 32768 a second regardless -- so the DMA ring (RG_AUDIO_DMA_BUFFER_*
+// in the target config) runs dry and the hardware replays what was in it. That,
+// several dozen times a second, is the buzz. It is also why every other core
+// here sounds clean: they actually reach 100%.
+//
+// The missing samples cannot be invented -- that audio has not been emulated
+// yet -- so the only honest fix is to slow the DAC down to the rate the core
+// really sustains. The stream then becomes continuous. The cost is pitch: at
+// 60% speed the sound drops roughly six semitones, like a tape played slow.
+// That is consistent with what is on screen (the game IS in slow motion) and is
+// a much milder artifact than the buzz. It also means overclock and audio
+// quality pull in the same direction: the closer to 100%, the smaller the
+// detune.
+//
+// Set to Off in the options menu to go back to a fixed 32768Hz and hear the
+// difference.
+// A steady detune is far less objectionable than a wobbling one: the ear barely
+// registers a tape running 14% slow, but hears a semitone of wow immediately.
+// The first version of this tracked the measured capability window by window,
+// and the log showed why that is wrong -- capability in Fire Red swings +/-15%
+// from one second to the next (scene load, ROM page faults), so the rate moved
+// in 32 of 35 windows and the pitch wobbled with it. So: track the MEDIAN of the
+// last few windows rather than the latest one. The median ignores the one-off
+// spike or stall and moves only when the game settles into a genuinely different
+// speed; over those same 35 windows it brings the changes down from 32 to 6.
+//
+// The variance it refuses to chase has to go somewhere, and that somewhere is
+// the DMA ring: see RG_AUDIO_DMA_BUFFER_COUNT in the target config. The two
+// changes only work together -- a steady rate with a 22ms ring just moves the
+// artifact from wow to dropouts.
+#define AUDIO_SYNC_WINDOW_US 1000000
+#define AUDIO_SYNC_HISTORY   8
+#define AUDIO_SYNC_MIN_RATE  (AUDIO_SAMPLE_RATE / 4)
+
+static int audioSync = 1;
+static int audioRate = AUDIO_SAMPLE_RATE; // rate currently programmed on the DAC
+static int audioCapability = 0;           // last window's measurement, for the log
+static int audioHistory[AUDIO_SYNC_HISTORY];
+static int audioHistoryLen = 0, audioHistoryPos = 0;
+static int64_t audioWindowStart = 0;      // RTC microseconds
+static uint32_t audioWindowFrames = 0;    // frames handed to the DAC this window
+static int64_t audioWindowBlocked = 0;    // us spent inside rg_audio_submit
+
+// Start a fresh measuring window, keeping the history. Called whenever real time
+// passed without emulation in it -- a menu, a card write -- since that dead time
+// would otherwise be charged to the emulator and read as a slowdown.
+static void audio_sync_window(void)
+{
+    // RTC rather than rg_system_timer(), for the same reason the profile uses
+    // it: esp_timer follows the PLL, so under overclock it could read the window
+    // short and we would tune the DAC to a speed we are not actually running at.
+    audioWindowStart = (int64_t)esp_rtc_get_time_us();
+    audioWindowFrames = 0;
+    audioWindowBlocked = 0;
+}
+
+static void audio_sync_reset(void)
+{
+    audioHistoryLen = 0;
+    audioHistoryPos = 0;
+    audio_sync_window();
+}
+
+static int audio_sync_median(void)
+{
+    int sorted[AUDIO_SYNC_HISTORY];
+    int i, j;
+
+    for (i = 0; i < audioHistoryLen; ++i) // insertion sort, at most 8 elements
+    {
+        int v = audioHistory[i];
+        for (j = i - 1; j >= 0 && sorted[j] > v; --j)
+            sorted[j + 1] = sorted[j];
+        sorted[j + 1] = v;
+    }
+    return sorted[audioHistoryLen / 2];
+}
+
+static void audio_sync_update(void)
+{
+    const int64_t elapsed = (int64_t)esp_rtc_get_time_us() - audioWindowStart;
+    if (elapsed < AUDIO_SYNC_WINDOW_US)
+        return;
+
+    const int64_t frames = audioWindowFrames;
+    // Clamped so a pathological window can never make the divisor vanish.
+    const int64_t blocked = RG_MIN(audioWindowBlocked, elapsed / 2);
+    audio_sync_window();
+
+    // Capability, not throughput. Time spent blocked in rg_audio_submit() is
+    // time the DAC held the emulator back, so what we just measured came out of
+    // only (elapsed - blocked) worth of emulation; without the block it would
+    // have produced proportionally more. Correcting for it is what stops the
+    // loop running away: aiming below plain throughput throttles the core, which
+    // lowers the next measurement, which lowers the rate again, all the way to
+    // the floor.
+    audioCapability = (int)(frames * 1000000 / (elapsed - blocked));
+
+    audioHistory[audioHistoryPos] = audioCapability;
+    audioHistoryPos = (audioHistoryPos + 1) % AUDIO_SYNC_HISTORY;
+    if (audioHistoryLen < AUDIO_SYNC_HISTORY)
+        audioHistoryLen++;
+
+    // Aim a couple of percent under the median, so the ring keeps a small
+    // surplus instead of sitting on empty -- an empty ring is precisely the
+    // replay-the-last-buffer buzz being fixed here. The price is those two
+    // percent, given up waiting in i2s_write().
+    int target = audio_sync_median();
+    target -= target >> 6;
+    target = (target + 256) & ~511; // no point chasing single hertz
+    target = RG_MIN(RG_MAX(target, AUDIO_SYNC_MIN_RATE), AUDIO_SAMPLE_RATE);
+
+    // Hysteresis, widened to ~6% to match the median: re-programming the rate
+    // stops the I2S channel and clears its DMA buffers, which is a click of its
+    // own, and every move is a step in pitch. Better to sit slightly wrong and
+    // hold still than to be continually almost right.
+    if (abs(target - audioRate) * 16 > audioRate)
+    {
+        audioRate = target;
+        rg_audio_set_sample_rate(audioRate);
+    }
+}
 
 void netpacket_poll_receive()
 {
@@ -125,7 +263,7 @@ static void profile_flush(void)
 
     fprintf(fp, "%d quadros: %d desenhados, %d pulados | oc %d (%dMHz) | skip %d | entrada %d"
                 " | emu %d | rom %d (%d faults) | video %d | audio %d | total %d us"
-                " | %d qps | clk %d.%02d | vel %d%% | ocupado %d%%\n",
+                " | %d qps | clk %d.%02d | vel %d%% | ocupado %d%% | dac %dHz (cap %d)\n",
             n, profile.drawn, n - profile.drawn,
             rg_system_get_overclock(), mhz, (int)app->frameskip,
             (int)(profile.input * toRealUs), (int)(profile.emu * toRealUs),
@@ -134,7 +272,8 @@ static void profile_flush(void)
             (int)(profile.total * toRealUs),
             (int)(profile.total ? (1000000.0 / (profile.total * toRealUs)) : 0),
             (int)(clk + 0.005), (int)((clk + 0.005 - (int)(clk + 0.005)) * 100),
-            (int)(stats.speedPercent + 0.5f), (int)(stats.busyPercent + 0.5f));
+            (int)(stats.speedPercent + 0.5f), (int)(stats.busyPercent + 0.5f),
+            audioRate, audioCapability);
 
     fclose(fp);
     memset(&profile, 0, sizeof(profile));
@@ -293,6 +432,34 @@ static rg_gui_event_t sound_toggle_cb(rg_gui_option_t *option, rg_gui_event_t ev
     return RG_DIALOG_VOID;
 }
 
+// Doubles as a readout: with sync on, the value is the rate the DAC is running
+// at right now, which is also a direct reading of emulation speed.
+static rg_gui_event_t audio_sync_cb(rg_gui_option_t *option, rg_gui_event_t event)
+{
+    if (event == RG_DIALOG_PREV || event == RG_DIALOG_NEXT)
+    {
+        audioSync = !audioSync;
+        rg_settings_set_number(NS_APP, SETTING_AUDIO_SYNC, audioSync);
+
+        if (audioSync)
+        {
+            audio_sync_reset();
+        }
+        else
+        {
+            audioRate = AUDIO_SAMPLE_RATE;
+            rg_audio_set_sample_rate(audioRate);
+        }
+    }
+
+    if (audioSync)
+        sprintf(option->value, "%dHz", audioRate);
+    else
+        strcpy(option->value, _("Off"));
+
+    return RG_DIALOG_VOID;
+}
+
 static rg_gui_event_t sram_autosave_cb(rg_gui_option_t *option, rg_gui_event_t event)
 {
     if (event == RG_DIALOG_PREV) autoSaveSRAM--;
@@ -348,6 +515,7 @@ static rg_gui_event_t profile_toggle_cb(rg_gui_option_t *option, rg_gui_event_t 
 static void options_handler(rg_gui_option_t *dest)
 {
     *dest++ = (rg_gui_option_t){0, _("Audio enable"),  "-", RG_DIALOG_FLAG_NORMAL, &sound_toggle_cb};
+    *dest++ = (rg_gui_option_t){0, _("Audio sync"),    "-", RG_DIALOG_FLAG_NORMAL, &audio_sync_cb};
     *dest++ = (rg_gui_option_t){0, _("SRAM autosave"), "-", RG_DIALOG_FLAG_NORMAL, &sram_autosave_cb};
     *dest++ = (rg_gui_option_t){0, _("SRAM state"),    "-", RG_DIALOG_FLAG_NORMAL, &sram_status_cb};
     *dest++ = (rg_gui_option_t){0, _("Profile log"),   "-", RG_DIALOG_FLAG_NORMAL, &profile_toggle_cb};
@@ -390,6 +558,7 @@ void app_main(void)
     sound_master_enable = rg_settings_get_number(NS_APP, SETTING_SOUND_EMULATION, true);
     autoSaveSRAM = (int)rg_settings_get_number(NS_APP, SETTING_SAVESRAM, autoSaveSRAM);
     profileEnabled = (int)rg_settings_get_number(NS_APP, SETTING_PROFILE, profileEnabled);
+    audioSync = (int)rg_settings_get_number(NS_APP, SETTING_AUDIO_SYNC, audioSync);
 
     sramFile = rg_emu_get_path(RG_PATH_SAVE_SRAM, app->romPath);
     if (!rg_storage_mkdir(rg_dirname(sramFile)))
@@ -453,7 +622,10 @@ void app_main(void)
 
     RG_LOGI("emulation loop");
 
-    rg_audio_sample_t mixbuffer[AUDIO_BUFFER_LENGTH] = {0};
+    // static, not on the stack: 2.6KB now that we ask for a full 50fps frame.
+    static rg_audio_sample_t mixbuffer[AUDIO_BUFFER_LENGTH];
+
+    audio_sync_reset();
 
     while (true)
     {
@@ -473,6 +645,11 @@ void app_main(void)
             else
                 rg_gui_options_menu();
             memset(&mixbuffer, 0, sizeof(mixbuffer));
+            // Menu time produced no audio, and counting it would read as a
+            // slowdown. The history goes too, not just the window: the menu is
+            // exactly where overclock and frameskip change, so what it holds
+            // describes a machine that may no longer exist.
+            audio_sync_reset();
             continue;
         }
 
@@ -496,13 +673,20 @@ void app_main(void)
         rg_system_tick(rg_system_timer() - startTime);
 
         // Note: rg_system_tick() only accounts, it never sleeps. Nothing here
-        // paces the loop except rg_audio_submit() blocking when the audio
-        // buffer is full -- so a large "audio" figure in the log means we are
-        // waiting on audio (running fast enough), and a near-zero one means
-        // emulation is the wall.
+        // paces the loop except rg_audio_submit() blocking when the DMA ring is
+        // full -- so a near-zero "audio" figure in the log means emulation is
+        // the wall and the DAC is starving, which is the state audio sync exists
+        // to leave. With sync on it should settle at a small but non-zero
+        // fraction of the frame: the couple of percent of headroom we asked for.
+        const int64_t beforeSubmit = rg_system_timer();
         rg_audio_submit(mixbuffer, frames_count);
         // RG_TIMER_LAP("rg_audio_submit");
         const int64_t afterAudio = rg_system_timer();
+
+        audioWindowFrames += frames_count;
+        audioWindowBlocked += afterAudio - beforeSubmit;
+        if (audioSync)
+            audio_sync_update();
 
         // Autosave, debounced: every cartridge write pushes the deadline back,
         // so we only touch the card once the game has gone quiet. That keeps
@@ -520,6 +704,11 @@ void app_main(void)
             else if (autoSaveSRAM_Timer && rg_system_timer() >= autoSaveSRAM_Timer)
             {
                 sram_save();
+                // A 128KB card write is real time with no emulation in it. Left
+                // in the window it reads as a slowdown and detunes the sound for
+                // the next few seconds; the history is fine, only this window is
+                // spoiled.
+                audio_sync_window();
             }
         }
 

@@ -812,7 +812,12 @@ u32 sound_read_samples(s16 *out, u32 frames)
    if (samples_to_read > samples_available)
       samples_to_read = samples_available;
 
-   if (sound_master_enable)
+   /* The drain runs even when sound is off. render_gbc_sound() accumulates into
+    * sound_buffer with +=, and this loop is the only thing that ever zeroes it,
+    * so skipping it entirely (as the guard used to do) leaves stale samples in
+    * the ring: they keep being added to, overflow the s16, and come back as a
+    * burst the moment audio is switched on again. Read and clear always, and
+    * silence the output instead. */
    for(i = 0; i < samples_to_read; i++)
    {
       u32 source_index   = (sound_buffer_base + i) & BUFFER_SIZE_MASK;
@@ -827,6 +832,9 @@ u32 sound_read_samples(s16 *out, u32 frames)
 
       out[i] = current_sample * 16;
    }
+
+   if (!sound_master_enable)
+      memset(out, 0, samples_to_read * sizeof(s16));
 
    sound_buffer_base += samples_to_read;
    sound_buffer_base &= BUFFER_SIZE_MASK;

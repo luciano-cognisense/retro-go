@@ -23,8 +23,22 @@
 // We can safely assume that no application will submit more than 640 audio frames per call to
 // driver_submit (32000/50). Using a single large buffer risks blocking the call needlessly because
 // some apps submit more than once per cycle or there could be occasional jitter (early submission).
-#define DMA_BUFFER_COUNT 4
-#define DMA_BUFFER_LEN 180
+//
+// COUNT * LEN frames is also all the audio this ring can hold, and that is what a core gets to draw
+// on when it cannot keep up: the DAC consumes at a fixed rate, so a core running below realtime
+// hands over fewer frames per second than are played, and an empty ring means the hardware replays
+// its last descriptors -- an audible buzz. The default 720 frames (~22ms at 32kHz) is nothing to
+// draw on. A larger ring lets the seconds where the core runs ahead pay for the seconds it falls
+// behind; the cost is latency, LEN * COUNT / samplerate. Override RG_AUDIO_DMA_BUFFER_COUNT in the
+// target's config.h; leave LEN alone, driver_submit() keeps a buffer of that size on the stack.
+#ifndef RG_AUDIO_DMA_BUFFER_COUNT
+#define RG_AUDIO_DMA_BUFFER_COUNT 4
+#endif
+#ifndef RG_AUDIO_DMA_BUFFER_LEN
+#define RG_AUDIO_DMA_BUFFER_LEN 180
+#endif
+#define DMA_BUFFER_COUNT RG_AUDIO_DMA_BUFFER_COUNT
+#define DMA_BUFFER_LEN RG_AUDIO_DMA_BUFFER_LEN
 
 static struct {
     const char *last_error;
