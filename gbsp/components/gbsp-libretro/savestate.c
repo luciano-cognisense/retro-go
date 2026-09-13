@@ -179,13 +179,21 @@ void gba_save_state(void* dst)
 
   // The padding space is pushed into a padding field for easy parsing
   {
-    unsigned padsize = GBA_STATE_MEM_SIZE - (wrptr - stptr);
-    padsize -= 1 + 9 + 4 + 1 + 1;
-    *wrptr++ = 0x05;    // Byte array
-    bson_write_cstring(wrptr, "zpadding");
-    bson_write_u32(wrptr, padsize);
-    *wrptr++ = 0;
-    wrptr += padsize;
+    const unsigned used = (unsigned)(wrptr - stptr);
+    const unsigned overhead = 1 + 9 + 4 + 1 + 1;
+    // Guard against the state outgrowing GBA_STATE_MEM_SIZE: the subtraction
+    // below is unsigned, so it would wrap to a huge padsize and walk off the
+    // end of the caller's buffer. Emitting a short document instead is safe --
+    // gba_load_state() refuses it on the docsize check.
+    if (used + overhead <= GBA_STATE_MEM_SIZE)
+    {
+      unsigned padsize = GBA_STATE_MEM_SIZE - used - overhead;
+      *wrptr++ = 0x05;    // Byte array
+      bson_write_cstring(wrptr, "zpadding");
+      bson_write_u32(wrptr, padsize);
+      *wrptr++ = 0;
+      wrptr += padsize;
+    }
   }
 
   *wrptr++ = 0;

@@ -226,12 +226,16 @@ static bool load_state_handler(const char *filename)
         // hard reset and load the cartridge backup if present.
         reset_gba();
         sram_load();
+        return false;
     }
 
-    // The autosave deadline is left alone on purpose: a save state does not
-    // touch gamepak_backup, so anything still unsaved stays unsaved and must
-    // keep its pending flush.
-    return success;
+    // The state now carries the cartridge backup too (gba_memory.c,
+    // "backup-data"), so loading one replaces what is in memory. Mark it dirty
+    // so the .sram on the card catches up with the state the player just
+    // restored -- otherwise the two would disagree until the game writes again.
+    gamepak_backup_dirty++;
+
+    return true;
 }
 
 static bool reset_handler(bool hard)
@@ -434,9 +438,11 @@ void app_main(void)
     RG_LOGI("reset_gba");
     reset_gba();
 
-    // Always load the cartridge backup, even when resuming a save state:
-    // gba_load_state() does not restore gamepak_backup (see gba_memory.c),
-    // and reset_gba()/init_memory() do not clear it either.
+    // Load the cartridge backup first, unconditionally. A save state now
+    // carries its own copy (gba_memory.c, "backup-data") and will overwrite
+    // this a few lines below -- which is correct, the state is the more
+    // specific snapshot -- but a state that is missing, refused or from an
+    // older format leaves the .sram as the fallback instead of a blank save.
     sram_load();
 
     if (app->bootFlags & RG_BOOT_RESUME)

@@ -2383,7 +2383,8 @@ bool memory_check_savestate(const u8 *src)
     if (!bson_contains_key(bakdoc, vars32[i], BSON_TYPE_INT32))
       return false;
 
-  if (!bson_contains_key(bakdoc, "gpio-regs", BSON_TYPE_BIN) ||
+  if (!bson_contains_key(bakdoc, "backup-data", BSON_TYPE_BIN) ||
+      !bson_contains_key(bakdoc, "gpio-regs", BSON_TYPE_BIN) ||
       !bson_contains_key(bakdoc, "rtc-data-words", BSON_TYPE_ARR))
       return false;
 
@@ -2433,6 +2434,8 @@ bool memory_read_savestate(const u8 *src)
     bson_read_int32(bakdoc, "eeprom-mode", &eeprom_mode) &&
     bson_read_int32(bakdoc, "eeprom-addr", &eeprom_address) &&
     bson_read_int32(bakdoc, "eeprom-counter", &eeprom_counter) &&
+
+    bson_read_bytes(bakdoc, "backup-data", gamepak_backup, sizeof(gamepak_backup)) &&
 
     bson_read_bytes(bakdoc, "gpio-regs", gpio_regs, sizeof(gpio_regs)) &&
 
@@ -2497,6 +2500,13 @@ unsigned memory_write_savestate(u8 *dst)
   bson_write_int32(dst, "eeprom-mode", eeprom_mode);
   bson_write_int32(dst, "eeprom-addr", eeprom_address);
   bson_write_int32(dst, "eeprom-counter", eeprom_counter);
+
+  // The cartridge backup itself (SRAM/flash/EEPROM), not just its metadata.
+  // Upstream leaves this out and the state is then not a complete snapshot:
+  // loading it restores the game's RAM while the cartridge save stays at
+  // whatever it happens to be, which is how a state can resurrect a deleted
+  // save file or lose a fresh one. Costs 128KB of GBA_STATE_MEM_SIZE.
+  bson_write_bytes(dst, "backup-data", gamepak_backup, sizeof(gamepak_backup));
 
   bson_write_bytes(dst, "gpio-regs", gpio_regs, sizeof(gpio_regs));
   bson_write_int32(dst, "rtc-state", rtc_state);

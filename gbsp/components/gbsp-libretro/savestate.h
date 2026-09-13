@@ -93,9 +93,15 @@ bool bson_read_int32_array(const u8 *srcp, const char *key, u32* value, unsigned
 bool bson_read_bytes(const u8 *srcp, const char *key, void* buffer, unsigned cnt);
 
 /* this is an upper limit, leave room for future (?) stuff */
-#define GBA_STATE_MEM_SIZE                    (416*1024)
+/* 416KB upstream; raised to fit the 128KB cartridge backup ("backup-data"),
+   which makes the state an actual complete snapshot. Rough budget: iwram 32K +
+   ewram 256K + vram 96K + backup 128K + oam/pal/ioregs 3K = 515K, leaving
+   ~60KB for the cpu/sound/dma documents, bson overhead and zpadding. */
+#define GBA_STATE_MEM_SIZE                    (576*1024)
 #define GBA_STATE_MAGIC                       0x06BAC0DE
-#define GBA_STATE_VERSION                     0x00010004
+/* Bumped with backup-data: an older state has no cartridge backup in it and
+   must be refused rather than loaded half-applied. */
+#define GBA_STATE_VERSION                     0x00010005
 
 bool gba_load_state(const void *src);
 void gba_save_state(void *dst);
