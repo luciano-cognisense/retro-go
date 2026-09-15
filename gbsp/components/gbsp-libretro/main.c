@@ -20,6 +20,21 @@
 #include "common.h"
 #include <ctype.h>
 
+#ifdef RETRO_GO
+#include <esp_cpu.h>
+// CPU cycles spent inside update_scanline(), and how many times it was called
+// (calls, NOT scanlines drawn -- it returns immediately on a skipped frame).
+// gbsp_update_ticks covers the whole of update_gba(), so it CONTAINS the
+// scanline figure; the profile subtracts one from the other.
+//
+// Written and reset by the emulator task on one core, so no cross-core hazard
+// here. The display counter, which does cross cores, is handled in
+// gbsp/main/main.c and is a different problem.
+uint64_t gbsp_scanline_ticks = 0;
+uint32_t gbsp_scanline_count = 0;
+uint64_t gbsp_update_ticks = 0;
+#endif
+
 timer_type timer[4];
 
 u32 frame_counter = 0;
@@ -119,6 +134,14 @@ void init_main(void)
 
 u32 function_cc update_gba(int remaining_cycles)
 {
+#ifdef RETRO_GO
+  // Everything the emulator does that is not interpreting instructions passes
+  // through here: video events, timers, DMA, serial, sound. Timing the whole
+  // function and subtracting the scanline figure gives that cost on its own,
+  // which is what stops "emu minus render" from being mislabelled as the
+  // interpreter. Single entry, single exit -- see the return at the bottom.
+  const uint32_t _gba_t0 = esp_cpu_get_cycle_count();
+#endif
   u32 changed_pc = 0;
   u32 frame_complete = 0;
   irq_type irq_raised = IRQ_NONE;
@@ -168,7 +191,31 @@ u32 function_cc update_gba(int remaining_cycles)
           if(reg[OAM_UPDATED])
             oam_update_count++;
 
+#ifdef RETRO_GO
+          // The profile log used to lump this into "emu", because update_gba()
+          // is called from inside execute_arm(). That made it impossible to say
+          // whether the frame budget goes on interpreting ARM instructions or on
+          // drawing -- and the two have completely different answers (a faster
+          // interpreter versus moving the PPU to the second core). So: measure
+          // it here, at the one call site there is.
+          //
+          // esp_cpu_get_cycle_count() is the CCOUNT register, a single
+          // instruction, unlike esp_timer_get_time() which is a function call of
+          // ~100 cycles. At 160 visible scanlines that is ~320 reads per drawn
+          // frame, which is noise against a frame of millions of cycles. On a
+          // skipped frame update_scanline() returns immediately (video.cpp:2293
+          // checks skip_next_frame), so this correctly charges it almost nothing.
+          {
+            uint32_t _t0 = esp_cpu_get_cycle_count();
+            update_scanline();
+            // u32 subtraction wraps correctly; the accumulator is 64-bit because
+            // a 300-frame window can otherwise overflow it.
+            gbsp_scanline_ticks += (uint32_t)(esp_cpu_get_cycle_count() - _t0);
+            gbsp_scanline_count++;
+          }
+#else
           update_scanline();
+#endif
 
           // Trigger the HBlank DMAs if enabled
           for (i = 0; i < 4; i++)
@@ -295,6 +342,10 @@ u32 function_cc update_gba(int remaining_cycles)
   // We voluntarily limit this. It is not accurate but it would be much harder.
   dma_cycles = MIN(64, dma_cycles);
   dma_cycles = MIN(execute_cycles, dma_cycles);
+
+#ifdef RETRO_GO
+  gbsp_update_ticks += (uint32_t)(esp_cpu_get_cycle_count() - _gba_t0);
+#endif
 
   return (execute_cycles - dma_cycles) | changed_pc | frame_complete;
 }

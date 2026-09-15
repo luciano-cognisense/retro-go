@@ -54,6 +54,20 @@ static const char *SETTING_SOUND_EMULATION = "sound";
 static const char *SETTING_SAVESRAM = "SaveSRAM";
 static const char *SETTING_PROFILE = "Profile";
 static const char *SETTING_AUDIO_SYNC = "AudioSync";
+static const char *SETTING_FRAMESKIP = "Frameskip";
+
+// -1 = leave rg_system_tick()'s automatic frameskip alone, 0..5 = pin it.
+//
+// The automatic one (rg_system.c, "Auto frameskip") moves between 1 and 5 on its
+// own, so a measurement can never be attributed to a frameskip the tester chose
+// -- every "skip N" in the logs so far was the system's decision, changing
+// underneath whatever else was being compared. It also floors at 1, so skip 0 is
+// not reachable at all, and it decides using speedPercent, which retro-go scales
+// by overclockMhz/240 and therefore overstates on the S3.
+//
+// Pinning it is what makes the rendering cost separable: per-frame cost is
+// E + R/(N+1), so the same scene at two known values of N gives E and R.
+static int forcedFrameskip = -1;
 
 // Performance log, same idea as the a26 core's a26-perfil.txt: one line every
 // PROFILE_FRAMES frames with where the time actually went. Reading SPEED% off
@@ -66,18 +80,30 @@ static bool profileHeaderWritten = false;
 // Internal RAM available right before we try to place iwram there. Logged in
 // the profile header so a failed placement says how much was missing.
 static int internalFreeKB = 0, internalBlockKB = 0;
+// Display processing time as of the start of the window. See profile_flush().
+static int64_t lastDisplayBusy = 0;
 static struct
 {
     int frames, drawn;
     int64_t input, emu, video, audio, total;
     int64_t rtcStart;
+    int audioRateChanges;
 } profile;
 
-// The RTC clock is the only timebase on this chip that overclocking does not
-// skew -- rg_system_set_overclock() itself relies on it for that reason, and
-// measurements showed rg_system_timer() (esp_timer) speeding up with the PLL,
-// which would hide the very gains we are measuring. So: the window's wall time
-// comes from the RTC, and the per-phase esp_timer deltas are scaled to it.
+// Wall clock for the window, read from the RTC. This started as a guard against
+// rg_system_timer() (esp_timer) following the PLL under overclock, which would
+// have inflated exactly the gains we were measuring. The guard did its job and
+// reported no such drift: "clk" has read 0.99-1.00 in every undisturbed window,
+// including at oc 2 / 280MHz. It is kept because it costs one read per window
+// and it catches something else instead -- real time that passed with no
+// emulation in it. A card write or a menu visit inflates the RTC interval
+// without adding to any phase, and "clk" well above 1.00 is how that shows.
+//
+// The phase figures below are NOT scaled by it. They are esp_timer measurements
+// of actual work and they are the truth; the surplus belongs to no phase, so
+// spreading it across them would invent emulation time that never happened.
+// "clk" is printed as a diagnostic: a window with clk outside ~1.00 is one whose
+// absolute microseconds should not be compared with the others.
 extern uint64_t esp_rtc_get_time_us(void);
 
 // Audio sync.
@@ -115,13 +141,41 @@ extern uint64_t esp_rtc_get_time_us(void);
 // the DMA ring: see RG_AUDIO_DMA_BUFFER_COUNT in the target config. The two
 // changes only work together -- a steady rate with a 22ms ring just moves the
 // artifact from wow to dropouts.
+// Two failure modes the median alone does not cover, both found by review:
+//
+// The nominal rate is not just another rate. It is the only one with no detune,
+// and the only one where the DAC is not holding the emulator back -- below it,
+// a full ring makes i2s_write() block and paces emulation at whatever the DAC is
+// doing. With a flat 1/16 hysteresis, 31232, 31744 and 32256 Hz can never reach
+// 32768: the step is under 6% from each. A core capable of full speed would sit
+// at 95% forever. So nominal gets its own rule: entering it ignores hysteresis,
+// leaving it obeys. That asymmetry is deliberate -- being stuck below nominal
+// costs a permanent detune AND throttling, while being at nominal without quite
+// sustaining it costs an underrun the ring absorbs.
+//
+// Except when it does not. A capability that settles just below realtime -- 97%,
+// 99% -- produces less than the DAC consumes, every second, forever. The ring
+// only postpones that; it drains in a few seconds and then the buzz is back for
+// good. And the median cannot rescue it, because the step down from nominal is
+// itself under the hysteresis. Simulated against this controller: at a sustained
+// 99%, 19 of 30 seconds ran dry; at 97%, 25 of 30. That band -- roughly 94% to
+// 100% -- is the worst possible place for a blind spot, because it is exactly
+// where the games that ALMOST run full speed live.
+//
+// So a deficit guard, which overrides hysteresis downwards. The signal is not
+// "produced less than the rate" on its own: when the ring is full the emulator
+// is throttled and production equals the rate by definition. What distinguishes
+// the two is blocking. No blocking AND production below consumption means the
+// ring is draining, and three of those in a row is not noise.
 #define AUDIO_SYNC_WINDOW_US 1000000
 #define AUDIO_SYNC_HISTORY   8
+#define AUDIO_SYNC_STARVE    3
 #define AUDIO_SYNC_MIN_RATE  (AUDIO_SAMPLE_RATE / 4)
 
 static int audioSync = 1;
 static int audioRate = AUDIO_SAMPLE_RATE; // rate currently programmed on the DAC
 static int audioCapability = 0;           // last window's measurement, for the log
+static int audioStarving = 0;             // consecutive windows with the ring draining
 static int audioHistory[AUDIO_SYNC_HISTORY];
 static int audioHistoryLen = 0, audioHistoryPos = 0;
 static int64_t audioWindowStart = 0;      // RTC microseconds
@@ -145,6 +199,7 @@ static void audio_sync_reset(void)
 {
     audioHistoryLen = 0;
     audioHistoryPos = 0;
+    audioStarving = 0;
     audio_sync_window();
 }
 
@@ -191,19 +246,41 @@ static void audio_sync_update(void)
     // Aim a couple of percent under the median, so the ring keeps a small
     // surplus instead of sitting on empty -- an empty ring is precisely the
     // replay-the-last-buffer buzz being fixed here. The price is those two
-    // percent, given up waiting in i2s_write().
-    int target = audio_sync_median();
-    target -= target >> 6;
+    // percent, given up waiting in i2s_write(). At or above realtime the margin
+    // is dropped: there the surplus exists on its own, and shaving it would put
+    // us back below nominal for nothing.
+    const int median = audio_sync_median();
+    int target = median;
+    if (median < AUDIO_SAMPLE_RATE)
+        target -= target >> 6;
     target = (target + 256) & ~511; // no point chasing single hertz
     target = RG_MIN(RG_MAX(target, AUDIO_SYNC_MIN_RATE), AUDIO_SAMPLE_RATE);
 
-    // Hysteresis, widened to ~6% to match the median: re-programming the rate
-    // stops the I2S channel and clears its DMA buffers, which is a click of its
-    // own, and every move is a step in pitch. Better to sit slightly wrong and
-    // hold still than to be continually almost right.
-    if (abs(target - audioRate) * 16 > audioRate)
+    // Draining, or merely throttled? See the note above the declarations.
+    const int64_t consumed = (int64_t)audioRate * elapsed / 1000000;
+    if (blocked == 0 && frames < consumed)
+        audioStarving++;
+    else
+        audioStarving = 0;
+
+    // Hysteresis is ~6% to match the median: re-programming the rate stops the
+    // I2S channel and clears its DMA buffers, which is a click of its own, and
+    // every move is a step in pitch. Better to sit slightly wrong and hold still
+    // than to be continually almost right -- but not when sitting still means
+    // running dry, hence the two overrides.
+    bool move;
+    if (target == AUDIO_SAMPLE_RATE)
+        move = (audioRate != AUDIO_SAMPLE_RATE);        // nothing beats no detune
+    else if (audioStarving >= AUDIO_SYNC_STARVE)
+        move = (target < audioRate);                    // escape hatch, downwards only
+    else
+        move = (abs(target - audioRate) * 16 > audioRate);
+
+    if (move)
     {
         audioRate = target;
+        audioStarving = 0;
+        profile.audioRateChanges++;
         rg_audio_set_sample_rate(audioRate);
     }
 }
@@ -221,6 +298,27 @@ static bool screenshot_handler(const char *filename, int width, int height)
     return rg_surface_save_image_file(currentUpdate, filename, width, height);
 }
 
+// Start a clean window. rtcStart is taken HERE rather than on the first frame of
+// the window: taken at the end of that frame, as it used to be, the RTC interval
+// missed a frame that profile.total already contained, which skewed clk.
+// The slice counters live in the emulator core and reset on the same boundary.
+static void profile_reset_window(void)
+{
+    memset(&profile, 0, sizeof(profile));
+    profile.rtcStart = (int64_t)esp_rtc_get_time_us();
+    gamepak_page_faults = 0;
+    gamepak_page_time = 0;
+    gbsp_scanline_ticks = 0;
+    gbsp_scanline_count = 0;
+    gbsp_update_ticks = 0;
+    // Snapshot rather than reset: this one is written by the display task on the
+    // OTHER core. Resetting it from here would race with that task and lose
+    // counts, so it is left strictly monotonic -- core 1 only ever adds, we only
+    // ever read -- and the window's value is the difference. See profile_flush()
+    // for what happens when the 64-bit read tears.
+    lastDisplayBusy = rg_display_get_counters().busyTime;
+}
+
 static void profile_flush(void)
 {
     if (profile.frames < 1)
@@ -233,6 +331,7 @@ static void profile_flush(void)
         profile.frames = 0; // don't retry every 300 frames
         return;
     }
+    // (window reset happens at the end, via profile_reset_window)
 
     if (!profileHeaderWritten)
     {
@@ -250,37 +349,78 @@ static void profile_flush(void)
     }
 
     rg_stats_t stats = rg_system_get_stats();
-    int n = profile.frames;
+    const int n = profile.frames;
+    const int mhz = rg_system_get_cpu_speed();
+    const double perFrame = 1.0 / n;
 
-    // Scale the measured phases so they add up to the window's real duration
-    // (see the esp_rtc_get_time_us note above). "clk" in the line below is the
-    // ratio we observed: 1.00 means esp_timer agreed with the RTC, anything
-    // higher means it was running fast -- which is what overclocking does here.
-    int mhz = rg_system_get_cpu_speed();
-    int64_t realWindow = (int64_t)esp_rtc_get_time_us() - profile.rtcStart;
-    double clk = (profile.total > 0 && realWindow > 0) ? (double)realWindow / profile.total : 1.0;
-    double toRealUs = clk / n;
+    // "clk" is a health flag for the window, not a correction factor. It is the
+    // RTC's wall time over the sum of the measured phases: 1.00 means everything
+    // that happened is accounted for, and anything much above it means real time
+    // passed with no emulation in it -- a card write, a menu. The phases below
+    // are NOT scaled by it; see the note by esp_rtc_get_time_us(). A window with
+    // clk outside ~1.00 is one whose absolute microseconds should be ignored.
+    const int64_t realWindow = (int64_t)esp_rtc_get_time_us() - profile.rtcStart;
+    const double clk = (profile.total > 0 && realWindow > 0)
+                     ? (double)realWindow / profile.total : 1.0;
 
-    fprintf(fp, "%d quadros: %d desenhados, %d pulados | oc %d (%dMHz) | skip %d | entrada %d"
-                " | emu %d | rom %d (%d faults) | video %d | audio %d | total %d us"
-                " | %d qps | clk %d.%02d | vel %d%% | ocupado %d%% | dac %dHz (cap %d)\n",
+    // "emu" split three ways, all of them slices of it rather than siblings:
+    // execute_arm() calls update_gba(), which calls update_scanline().
+    //
+    //   render   -- update_scanline(), the PPU
+    //   sistema  -- the rest of update_gba(): timers, DMA, serial, sound
+    //   fora     -- emu minus update_gba()
+    //
+    // "fora" is deliberately NOT called "interpretador". It is everything the
+    // emulator does outside update_gba(), which includes the memory handlers and
+    // the ROM paging the interpreter calls into, not just instruction decode.
+    // Naming it after the interpreter would smuggle in a conclusion we have not
+    // measured.
+    const int64_t updateUs = mhz > 0 ? (int64_t)(gbsp_update_ticks / mhz) : 0;
+    const int64_t renderUs = mhz > 0 ? (int64_t)(gbsp_scanline_ticks / mhz) : 0;
+
+    // Display processing on the other core. This is DURATION, not occupancy:
+    // rg_display's busyTime covers write_update(), so it excludes the wait on
+    // the task queue and the final lcd_sync(), but it still contains any stall
+    // on a DMA buffer inside the blit. It says how long core 1 was occupied with
+    // our frames, not how many cycles it actually burned.
+    //
+    // The counter is int64_t, written on core 1 and read here on core 0, so a
+    // read can tear when a carry crosses the 32-bit boundary -- roughly once per
+    // 71 minutes of accumulated busy time. Rather than lock anything, take the
+    // difference and check it is physically possible; a torn read then costs one
+    // window, reported as -1, instead of a silently wrong number.
+    const int64_t displayNow = rg_display_get_counters().busyTime;
+    int64_t displayDelta = displayNow - lastDisplayBusy;
+    if (displayDelta < 0 || (realWindow > 0 && displayDelta > realWindow))
+        displayDelta = -1;
+    lastDisplayBusy = displayNow;
+
+    // The configured frameskip, not app->frameskip, which the automatic logic
+    // keeps moving even while a forced value is in effect. "f" marks forced.
+    const int skipShown = (forcedFrameskip >= 0) ? forcedFrameskip : (int)app->frameskip;
+
+    fprintf(fp, "%d quadros: %d desenhados, %d pulados | oc %d (%dMHz) | skip %d%s | entrada %d"
+                " | emu %d (render %d | sistema %d | fora %d | rom %d em %d faults)"
+                " | video %d | audio %d | display %d | total %d us"
+                " | %d qps | clk %d.%02d | vel %d%% | ocupado %d%%"
+                " | dac %dHz (cap %d, %d trocas) | %d chamadas de scanline\n",
             n, profile.drawn, n - profile.drawn,
-            rg_system_get_overclock(), mhz, (int)app->frameskip,
-            (int)(profile.input * toRealUs), (int)(profile.emu * toRealUs),
-            (int)(gamepak_page_time * toRealUs), (int)gamepak_page_faults,
-            (int)(profile.video * toRealUs), (int)(profile.audio * toRealUs),
-            (int)(profile.total * toRealUs),
-            (int)(profile.total ? (1000000.0 / (profile.total * toRealUs)) : 0),
+            rg_system_get_overclock(), mhz, skipShown, forcedFrameskip >= 0 ? "f" : "",
+            (int)(profile.input * perFrame), (int)(profile.emu * perFrame),
+            (int)(renderUs * perFrame), (int)((updateUs - renderUs) * perFrame),
+            (int)((profile.emu - updateUs) * perFrame),
+            (int)(gamepak_page_time * perFrame), (int)gamepak_page_faults,
+            (int)(profile.video * perFrame), (int)(profile.audio * perFrame),
+            displayDelta < 0 ? -1 : (int)(displayDelta * perFrame),
+            (int)(profile.total * perFrame),
+            (int)(profile.total ? (1000000.0 * n / profile.total) : 0),
             (int)(clk + 0.005), (int)((clk + 0.005 - (int)(clk + 0.005)) * 100),
             (int)(stats.speedPercent + 0.5f), (int)(stats.busyPercent + 0.5f),
-            audioRate, audioCapability);
+            audioRate, audioCapability, profile.audioRateChanges,
+            (int)gbsp_scanline_count);
 
     fclose(fp);
-    memset(&profile, 0, sizeof(profile));
-    // "rom" is a slice of "emu", not a sibling: the page faults happen inside
-    // execute_arm(). Reset per window like everything else.
-    gamepak_page_faults = 0;
-    gamepak_page_time = 0;
+    profile_reset_window();
 }
 
 // Forget any pending write: the backup in memory and the .sram file agree.
@@ -460,6 +600,27 @@ static rg_gui_event_t audio_sync_cb(rg_gui_option_t *option, rg_gui_event_t even
     return RG_DIALOG_VOID;
 }
 
+static rg_gui_event_t frameskip_cb(rg_gui_option_t *option, rg_gui_event_t event)
+{
+    if (event == RG_DIALOG_PREV && forcedFrameskip > -1) forcedFrameskip--;
+    if (event == RG_DIALOG_NEXT && forcedFrameskip <  5) forcedFrameskip++;
+
+    if (event == RG_DIALOG_PREV || event == RG_DIALOG_NEXT)
+    {
+        // Persisted on purpose: the kit is powered off at the rail between runs,
+        // and a setting that reverts to Auto on every boot would quietly undo
+        // the experiment it exists to make possible.
+        rg_settings_set_number(NS_APP, SETTING_FRAMESKIP, forcedFrameskip);
+        if (forcedFrameskip >= 0)
+            app->frameskip = forcedFrameskip;
+    }
+
+    if (forcedFrameskip < 0) sprintf(option->value, "%s (%d)", _("Auto"), (int)app->frameskip);
+    else sprintf(option->value, "%d", forcedFrameskip);
+
+    return RG_DIALOG_VOID;
+}
+
 static rg_gui_event_t sram_autosave_cb(rg_gui_option_t *option, rg_gui_event_t event)
 {
     if (event == RG_DIALOG_PREV) autoSaveSRAM--;
@@ -504,7 +665,7 @@ static rg_gui_event_t profile_toggle_cb(rg_gui_option_t *option, rg_gui_event_t 
         if (!profileEnabled)
             profile_flush(); // don't leave a partial window unwritten
         else
-            memset(&profile, 0, sizeof(profile)); // start a clean window
+            profile_reset_window();
     }
 
     strcpy(option->value, profileEnabled ? _("On") : _("Off"));
@@ -516,6 +677,7 @@ static void options_handler(rg_gui_option_t *dest)
 {
     *dest++ = (rg_gui_option_t){0, _("Audio enable"),  "-", RG_DIALOG_FLAG_NORMAL, &sound_toggle_cb};
     *dest++ = (rg_gui_option_t){0, _("Audio sync"),    "-", RG_DIALOG_FLAG_NORMAL, &audio_sync_cb};
+    *dest++ = (rg_gui_option_t){0, _("Frameskip"),     "-", RG_DIALOG_FLAG_NORMAL, &frameskip_cb};
     *dest++ = (rg_gui_option_t){0, _("SRAM autosave"), "-", RG_DIALOG_FLAG_NORMAL, &sram_autosave_cb};
     *dest++ = (rg_gui_option_t){0, _("SRAM state"),    "-", RG_DIALOG_FLAG_NORMAL, &sram_status_cb};
     *dest++ = (rg_gui_option_t){0, _("Profile log"),   "-", RG_DIALOG_FLAG_NORMAL, &profile_toggle_cb};
@@ -559,6 +721,7 @@ void app_main(void)
     autoSaveSRAM = (int)rg_settings_get_number(NS_APP, SETTING_SAVESRAM, autoSaveSRAM);
     profileEnabled = (int)rg_settings_get_number(NS_APP, SETTING_PROFILE, profileEnabled);
     audioSync = (int)rg_settings_get_number(NS_APP, SETTING_AUDIO_SYNC, audioSync);
+    forcedFrameskip = (int)rg_settings_get_number(NS_APP, SETTING_FRAMESKIP, forcedFrameskip);
 
     sramFile = rg_emu_get_path(RG_PATH_SAVE_SRAM, app->romPath);
     if (!rg_storage_mkdir(rg_dirname(sramFile)))
@@ -626,6 +789,7 @@ void app_main(void)
     static rg_audio_sample_t mixbuffer[AUDIO_BUFFER_LENGTH];
 
     audio_sync_reset();
+    profile_reset_window();
 
     while (true)
     {
@@ -714,8 +878,6 @@ void app_main(void)
 
         if (profileEnabled)
         {
-            if (profile.frames == 0)
-                profile.rtcStart = (int64_t)esp_rtc_get_time_us();
             profile.input += afterInput - startTime;
             profile.emu += afterEmu - afterInput;
             profile.video += afterVideo - afterEmu;
@@ -726,8 +888,18 @@ void app_main(void)
                 profile_flush();
         }
 
+        // Pinned HERE, at the point of use, not at the top of the loop.
+        // rg_system_tick() above runs the automatic frameskip and moves
+        // app->frameskip, so a value written at the top of the frame was already
+        // stale by the time it got read down here -- roughly once a second, the
+        // auto logic stole a frame back. At a forced 0 that showed up as 292 of
+        // 300 frames drawn instead of 300, which is 7 or 8 stolen frames against
+        // the ~7 auto ticks that fit in 300 frames at 40qps. Exactly the count.
+        //
+        // Now the automatic frameskip is simply left alone and ignored while a
+        // value is forced, rather than being fought with every frame.
         if (skip_next_frame == 0)
-            skip_next_frame = app->frameskip;
+            skip_next_frame = (forcedFrameskip >= 0) ? forcedFrameskip : app->frameskip;
         else if (skip_next_frame > 0)
             skip_next_frame--;
     }

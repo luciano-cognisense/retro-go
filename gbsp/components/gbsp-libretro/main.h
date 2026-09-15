@@ -85,6 +85,15 @@ void rand_seed(u32 data);
 u32 function_cc update_gba(int remaining_cycles);
 void reset_gba(void);
 
+#ifdef RETRO_GO
+// Both are slices of what the profile log calls "emu", not siblings of it:
+// update_gba() runs from inside execute_arm(), and update_scanline() from
+// inside update_gba(). So gbsp_update_ticks CONTAINS gbsp_scanline_ticks.
+extern uint64_t gbsp_scanline_ticks;   // CPU cycles (CCOUNT), not microseconds
+extern uint32_t gbsp_scanline_count;   // CALLS to update_scanline, not lines drawn
+extern uint64_t gbsp_update_ticks;     // CPU cycles in update_gba(), render included
+#endif
+
 void init_main(void);
 
 void game_name_ext(char *src, char *buffer, char *extension);

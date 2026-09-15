@@ -190,7 +190,13 @@ static bool driver_submit(const rg_audio_frame_t *frames, size_t count)
         buffer[pos].left = left;
         buffer[pos].right = right;
 
-        if (i == count - 1 || ++pos == RG_COUNT(buffer))
+        // ++pos first, and it must stay the LEFT operand. With the test the
+        // other way round, the last iteration short-circuits on i == count - 1
+        // and never runs the increment, so pos is one short of the frames
+        // actually in the buffer and the submission below drops the last one --
+        // every call, including when count is a multiple of RG_COUNT(buffer).
+        // 548 frames in, 547 out.
+        if (++pos == RG_COUNT(buffer) || i == count - 1)
         {
             size_t written;
             if (i2s_write(I2S_NUM_0, (void *)buffer, pos * 4, &written, 1000) != ESP_OK)
