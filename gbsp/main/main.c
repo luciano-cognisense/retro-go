@@ -9,6 +9,19 @@
 #include "../components/gbsp-libretro/gba_memory.h"
 #include "../components/gbsp-libretro/gba_cc_lut.h"
 
+// Build configuration only: these values do not verify hardware clocks.
+// Zero means unavailable, rather than guessing a configuration.
+#ifdef CONFIG_ESP32S3_DATA_CACHE_SIZE
+#define RG_DCACHE_KB (CONFIG_ESP32S3_DATA_CACHE_SIZE / 1024)
+#else
+#define RG_DCACHE_KB 0
+#endif
+#ifdef CONFIG_SPIRAM_SPEED
+#define RG_PSRAM_MHZ CONFIG_SPIRAM_SPEED
+#else
+#define RG_PSRAM_MHZ 0
+#endif
+
 #define AUDIO_SAMPLE_RATE (GBA_SOUND_FREQUENCY)
 // A GBA frame is 280896 CPU ticks and the core emits one sample every 512 of
 // them (sound.c: buffer_ticks = tick_delta * sound_frequency / GBC_BASE_RATE),
@@ -85,7 +98,7 @@ static int64_t lastDisplayBusy = 0;
 static struct
 {
     int frames, drawn;
-    int64_t input, emu, video, audio, total;
+    int64_t input, emu, video, audio, audioPrepare, audioSubmit, total;
     int64_t rtcStart;
     int audioRateChanges;
 } profile;
@@ -324,6 +337,20 @@ static void profile_flush(void)
     if (profile.frames < 1)
         return;
 
+    // Close the measurement before opening/writing the log: logging I/O must
+    // not inflate this window's residual or the asynchronous display sample.
+    const int64_t realWindow = (int64_t)esp_rtc_get_time_us() - profile.rtcStart;
+    const int64_t displayNow = rg_display_get_counters().busyTime;
+    // profile.total already holds the SUM, not the printed per-frame average.
+    // Keep signed microseconds: clock disagreement must remain visible too.
+    const int64_t residualUs = realWindow - profile.total;
+    // NEWLIB_NANO_FORMAT cannot print 64-bit integers. Saturate before casting:
+    // a long menu visit can exceed int32 microseconds. +/-2e9 marks saturation;
+    // keep residualUs intact for analysis and leave clk based on the full window.
+    const int residualShown = residualUs > 2000000000LL ? 2000000000
+                            : residualUs < -2000000000LL ? -2000000000
+                            : (int)residualUs;
+
     FILE *fp = fopen(PROFILE_FILE, "a");
     if (!fp)
     {
@@ -339,12 +366,14 @@ static void profile_flush(void)
         // build/configuration when comparing experiments.
         // 0x3fc.../0x3fd... is internal SRAM on the S3, 0x3c... is PSRAM.
         fprintf(fp, "\n=== gbsp %s | %s | iwram %s | fb %s | cache de ROM %dMB"
-                    " | RAM interna no boot: %dKB livre, maior bloco %dKB ===\n",
+                    " | RAM interna no boot: %dKB livre, maior bloco %dKB"
+                    " | config compilada: dcache %dKB | psram %dMHz ===\n",
                 app->version ? app->version : "?",
                 app->romPath ? rg_basename(app->romPath) : "?",
                 ((u32)iwram_ptr >> 24) == 0x3c ? "PSRAM" : "interna",
                 ((u32)currentUpdate->data >> 24) == 0x3c ? "PSRAM" : "interna",
-                (int)gamepak_buffer_count, internalFreeKB, internalBlockKB);
+                (int)gamepak_buffer_count, internalFreeKB, internalBlockKB,
+                (int)RG_DCACHE_KB, (int)RG_PSRAM_MHZ);
         profileHeaderWritten = true;
     }
 
@@ -359,7 +388,6 @@ static void profile_flush(void)
     // passed with no emulation in it -- a card write, a menu. The phases below
     // are NOT scaled by it; see the note by esp_rtc_get_time_us(). A window with
     // clk outside ~1.00 is one whose absolute microseconds should be ignored.
-    const int64_t realWindow = (int64_t)esp_rtc_get_time_us() - profile.rtcStart;
     const double clk = (profile.total > 0 && realWindow > 0)
                      ? (double)realWindow / profile.total : 1.0;
 
@@ -389,11 +417,9 @@ static void profile_flush(void)
     // 71 minutes of accumulated busy time. Rather than lock anything, take the
     // difference and check it is physically possible; a torn read then costs one
     // window, reported as -1, instead of a silently wrong number.
-    const int64_t displayNow = rg_display_get_counters().busyTime;
     int64_t displayDelta = displayNow - lastDisplayBusy;
     if (displayDelta < 0 || (realWindow > 0 && displayDelta > realWindow))
         displayDelta = -1;
-    lastDisplayBusy = displayNow;
 
     // The configured frameskip, not app->frameskip, which the automatic logic
     // keeps moving even while a forced value is in effect. "f" marks forced.
@@ -401,7 +427,8 @@ static void profile_flush(void)
 
     fprintf(fp, "%d quadros: %d desenhados, %d pulados | oc %d (%dMHz) | skip %d%s | entrada %d"
                 " | emu %d (render %d | sistema %d | fora %d | rom %d em %d faults)"
-                " | video %d | audio %d | display %d | total %d us"
+                " | video %d | audio %d (preparo %d | envio %d) | display %d | total %d us"
+                " | residual_janela %d us"
                 " | %d qps | clk %d.%02d | vel %d%% | ocupado %d%%"
                 " | dac %dHz (cap %d, %d trocas) | %d chamadas de scanline\n",
             n, profile.drawn, n - profile.drawn,
@@ -411,8 +438,9 @@ static void profile_flush(void)
             (int)((profile.emu - updateUs) * perFrame),
             (int)(gamepak_page_time * perFrame), (int)gamepak_page_faults,
             (int)(profile.video * perFrame), (int)(profile.audio * perFrame),
+            (int)(profile.audioPrepare * perFrame), (int)(profile.audioSubmit * perFrame),
             displayDelta < 0 ? -1 : (int)(displayDelta * perFrame),
-            (int)(profile.total * perFrame),
+            (int)(profile.total * perFrame), residualShown,
             (int)(profile.total ? (1000000.0 * n / profile.total) : 0),
             (int)(clk + 0.005), (int)((clk + 0.005 - (int)(clk + 0.005)) * 100),
             (int)(stats.speedPercent + 0.5f), (int)(stats.busyPercent + 0.5f),
@@ -882,6 +910,11 @@ void app_main(void)
             profile.emu += afterEmu - afterInput;
             profile.video += afterVideo - afterEmu;
             profile.audio += afterAudio - afterVideo;
+            // Preparation includes sample draining/conversion AND system_tick.
+            // Core sound synthesis remains inside emu. Submission includes
+            // driver work AND blocking; this is not pure CPU/wait accounting.
+            profile.audioPrepare += beforeSubmit - afterVideo;
+            profile.audioSubmit += afterAudio - beforeSubmit;
             profile.total += afterAudio - startTime;
             profile.drawn += drawnFrame ? 1 : 0;
             if (++profile.frames >= PROFILE_FRAMES)
