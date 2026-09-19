@@ -4,6 +4,8 @@
 // Also provides some tracing capabilities
 
 
+#include "memory_profile.h"
+
 #ifdef MEMORY_STATS_ANALYZE
   // Collects memory stats by region, access type, etc.
 

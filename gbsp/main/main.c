@@ -9,6 +9,7 @@
 #include "../components/gbsp-libretro/gba_memory.h"
 #include "../components/gbsp-libretro/gba_cc_lut.h"
 #include "../components/gbsp-libretro/ram_store.h"
+#include "../components/gbsp-libretro/memory_profile.h"
 
 // Build configuration only: these values do not verify hardware clocks.
 // Zero means unavailable, rather than guessing a configuration.
@@ -87,7 +88,11 @@ static int forcedFrameskip = -1;
 // PROFILE_FRAMES frames with where the time actually went. Reading SPEED% off
 // the menu only says how bad it is; this says which phase to attack.
 #define PROFILE_FRAMES 300
+#if GBSP_MEMORY_PROFILE_ACTIVE
+#define PROFILE_FILE RG_BASE_PATH "/gbsp-memory.txt"
+#else
 #define PROFILE_FILE RG_BASE_PATH "/gbsp-perfil.txt"
+#endif
 
 static int profileEnabled = 1;
 static bool profileHeaderWritten = false;
@@ -325,6 +330,7 @@ static void profile_reset_window(void)
     gbsp_scanline_ticks = 0;
     gbsp_scanline_count = 0;
     gbsp_update_ticks = 0;
+    gbsp_memory_profile_reset();
     // Snapshot rather than reset: this one is written by the display task on the
     // OTHER core. Resetting it from here would race with that task and lose
     // counts, so it is left strictly monotonic -- core 1 only ever adds, we only
@@ -368,13 +374,13 @@ static void profile_flush(void)
         // 0x3fc.../0x3fd... is internal SRAM on the S3, 0x3c... is PSRAM.
         fprintf(fp, "\n=== gbsp %s | %s | iwram %s | fb %s | cache de ROM %dMB"
                     " | RAM interna no boot: %dKB livre, maior bloco %dKB"
-                    " | config compilada: dcache %dKB | psram %dMHz | fast_ram %d (%s) ===\n",
+                    " | config compilada: dcache %dKB | psram %dMHz | fast_ram %d (%s) | memstats %d ===\n",
                 app->version ? app->version : "?",
                 app->romPath ? rg_basename(app->romPath) : "?",
                 ((u32)iwram_ptr >> 24) == 0x3c ? "PSRAM" : "interna",
                 ((u32)currentUpdate->data >> 24) == 0x3c ? "PSRAM" : "interna",
                 (int)gamepak_buffer_count, internalFreeKB, internalBlockKB,
-                (int)RG_DCACHE_KB, (int)RG_PSRAM_MHZ, GBSP_FAST_RAM_WRITES_ACTIVE, GBSP_FAST_RAM_WRITES_IMPL);
+                (int)RG_DCACHE_KB, (int)RG_PSRAM_MHZ, GBSP_FAST_RAM_WRITES_ACTIVE, GBSP_FAST_RAM_WRITES_IMPL, GBSP_MEMORY_PROFILE_ACTIVE);
         profileHeaderWritten = true;
     }
 
@@ -448,6 +454,7 @@ static void profile_flush(void)
             audioRate, audioCapability, profile.audioRateChanges,
             (int)gbsp_scanline_count);
 
+    gbsp_memory_profile_write(fp, (unsigned)n);
     fclose(fp);
     profile_reset_window();
 }

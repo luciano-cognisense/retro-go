@@ -6,4 +6,12 @@ menu "gpSP experiments"
             Experimental fast path for ordinary work RAM stores only.
             Keeps original cycle accounting and all non-RAM handlers.
             Ignored with dynarec/SMC. Compare on hardware before adopting.
+    config GBSP_MEMORY_PROFILE
+        bool "Count interpreter data accesses (diagnostic only)"
+        default n
+        help
+            Count interpreter data reads/writes by region and width.
+            Excludes instruction fetch, DMA, PPU and addresses >= 0x10000000.
+            Writes window totals to gbsp-memory.txt. Adds hot-path overhead;
+            do not compare its timings with normal builds. Ignored with dynarec.
 endmenu
