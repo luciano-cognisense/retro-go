@@ -1,0 +1,9 @@
+menu "gpSP experiments"
+    config GBSP_FAST_RAM_WRITES
+        bool "Direct interpreter writes to IWRAM/EWRAM"
+        default n
+        help
+            Experimental fast path for ordinary work RAM stores only.
+            Keeps original cycle accounting and all non-RAM handlers.
+            Ignored with dynarec/SMC. Compare on hardware before adopting.
+endmenu

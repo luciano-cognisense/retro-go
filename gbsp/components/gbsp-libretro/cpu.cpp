@@ -20,6 +20,7 @@
 extern "C" {
   #include "common.h"
   #include "cpu_instrument.h"
+  #include "ram_store.h"
 }
 
 const u8 bit_count[256] =
@@ -872,7 +873,7 @@ const u32 spsr_masks[4] = { 0x00000000, 0x000000EF, 0xF0000000, 0xF00000EF };
     STATS_MEMORY_ACCESS(write, type, region);                                 \
   }                                                                           \
                                                                               \
-  cpu_alert |= write_memory##size(_address, value);                           \
+  gbsp_store_memory(size, _address, value);                           \
 }                                                                             \
 
 #define load_aligned32(address, dest)                                         \
@@ -906,7 +907,7 @@ const u32 spsr_masks[4] = { 0x00000000, 0x000000EF, 0xF0000000, 0xF00000EF };
     cycles_remaining -= ws_cyc_seq[region][1];                                \
     STATS_MEMORY_ACCESS(write, u32, region);                                  \
   }                                                                           \
-  cpu_alert |= write_memory32(_address, value);                               \
+  gbsp_store_memory(32, _address, value);                               \
 }                                                                             \
 
 #define load_memory_u8(address, dest)                                         \
