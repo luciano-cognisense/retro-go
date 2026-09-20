@@ -11,12 +11,18 @@
 #define PREVIEW_PADDING     (4)
 #define PREVIEW_HEIGHT      ((int)(gui.height * 0.55f))
 #define PREVIEW_WIDTH       (PREVIEW_PANEL_WIDTH - PREVIEW_PADDING * 2)
+#define ACTIONS_HEIGHT      (29)
+#define ACTIONS_TOP         (gui.height - ACTIONS_HEIGHT)
 
-#define C_HANDS_ON_LAB_BACKGROUND 0xFFBD
-#define C_HANDS_ON_LAB_FOREGROUND 0x1149
+#define C_HANDS_ON_LAB_BACKGROUND 0x1149
+#define C_HANDS_ON_LAB_FOREGROUND 0xFFBD
+#define C_HANDS_ON_LAB_ACCENT     0xFC22
 
 retro_gui_t gui;
 static rg_image_t *systems_background;
+static rg_image_t *button_a;
+static rg_image_t *button_b;
+static rg_image_t *carousel_images[7];
 
 #define SETTING_SELECTED_TAB    "SelectedTab"
 #define SETTING_START_SCREEN    "StartScreen"
@@ -31,7 +37,7 @@ static int max_visible_lines(const tab_t *tab, int *_line_height)
 {
     int line_height = TEXT_RECT("ABC123", 0).height;
     if (_line_height) *_line_height = line_height;
-    return (gui.height - (HEADER_HEIGHT + 6) - (tab->navpath ? line_height : 0)) / line_height;
+    return (ACTIONS_TOP - (HEADER_HEIGHT + 6) - (tab->navpath ? line_height : 0)) / line_height;
 }
 
 void gui_init(bool cold_boot)
@@ -208,28 +214,28 @@ void gui_update_theme(void)
     gui.themes[0].foreground = rg_gui_get_theme_color("launcher_1", "foreground", C_HANDS_ON_LAB_FOREGROUND);
     gui.themes[0].list.standard_bg = rg_gui_get_theme_color("launcher_1", "list_standard_bg", C_TRANSPARENT);
     gui.themes[0].list.standard_fg = rg_gui_get_theme_color("launcher_1", "list_standard_fg", C_HANDS_ON_LAB_FOREGROUND);
-    gui.themes[0].list.selected_bg = rg_gui_get_theme_color("launcher_1", "list_selected_bg", C_HANDS_ON_LAB_FOREGROUND);
+    gui.themes[0].list.selected_bg = rg_gui_get_theme_color("launcher_1", "list_selected_bg", C_HANDS_ON_LAB_ACCENT);
     gui.themes[0].list.selected_fg = rg_gui_get_theme_color("launcher_1", "list_selected_fg", C_HANDS_ON_LAB_BACKGROUND);
 
     gui.themes[1].background = rg_gui_get_theme_color("launcher_2", "background", C_HANDS_ON_LAB_BACKGROUND);
     gui.themes[1].foreground = rg_gui_get_theme_color("launcher_2", "foreground", C_HANDS_ON_LAB_FOREGROUND);
     gui.themes[1].list.standard_bg = rg_gui_get_theme_color("launcher_2", "list_standard_bg", C_TRANSPARENT);
     gui.themes[1].list.standard_fg = rg_gui_get_theme_color("launcher_2", "list_standard_fg", C_HANDS_ON_LAB_FOREGROUND);
-    gui.themes[1].list.selected_bg = rg_gui_get_theme_color("launcher_2", "list_selected_bg", C_HANDS_ON_LAB_FOREGROUND);
+    gui.themes[1].list.selected_bg = rg_gui_get_theme_color("launcher_2", "list_selected_bg", C_HANDS_ON_LAB_ACCENT);
     gui.themes[1].list.selected_fg = rg_gui_get_theme_color("launcher_2", "list_selected_fg", C_HANDS_ON_LAB_BACKGROUND);
 
     gui.themes[2].background = rg_gui_get_theme_color("launcher_3", "background", C_HANDS_ON_LAB_BACKGROUND);
     gui.themes[2].foreground = rg_gui_get_theme_color("launcher_3", "foreground", C_HANDS_ON_LAB_FOREGROUND);
     gui.themes[2].list.standard_bg = rg_gui_get_theme_color("launcher_3", "list_standard_bg", C_TRANSPARENT);
     gui.themes[2].list.standard_fg = rg_gui_get_theme_color("launcher_3", "list_standard_fg", C_HANDS_ON_LAB_FOREGROUND);
-    gui.themes[2].list.selected_bg = rg_gui_get_theme_color("launcher_3", "list_selected_bg", C_HANDS_ON_LAB_FOREGROUND);
+    gui.themes[2].list.selected_bg = rg_gui_get_theme_color("launcher_3", "list_selected_bg", C_HANDS_ON_LAB_ACCENT);
     gui.themes[2].list.selected_fg = rg_gui_get_theme_color("launcher_3", "list_selected_fg", C_HANDS_ON_LAB_BACKGROUND);
 
     gui.themes[3].background = rg_gui_get_theme_color("launcher_4", "background", C_HANDS_ON_LAB_BACKGROUND);
     gui.themes[3].foreground = rg_gui_get_theme_color("launcher_4", "foreground", C_HANDS_ON_LAB_FOREGROUND);
     gui.themes[3].list.standard_bg = rg_gui_get_theme_color("launcher_4", "list_standard_bg", C_TRANSPARENT);
     gui.themes[3].list.standard_fg = rg_gui_get_theme_color("launcher_4", "list_standard_fg", C_HANDS_ON_LAB_FOREGROUND);
-    gui.themes[3].list.selected_bg = rg_gui_get_theme_color("launcher_4", "list_selected_bg", C_HANDS_ON_LAB_FOREGROUND);
+    gui.themes[3].list.selected_bg = rg_gui_get_theme_color("launcher_4", "list_selected_bg", C_HANDS_ON_LAB_ACCENT);
     gui.themes[3].list.selected_fg = rg_gui_get_theme_color("launcher_4", "list_selected_fg", C_HANDS_ON_LAB_BACKGROUND);
 
     // Flush our image cache to make sure the new images are loaded next time
@@ -396,6 +402,7 @@ void gui_redraw(void)
         gui_draw_status(tab);
         gui_draw_list(tab);
         gui_draw_preview(tab);
+        gui_draw_actions();
     }
     else
     {
@@ -408,6 +415,11 @@ void gui_redraw(void)
 
 void gui_draw_system_selector(void)
 {
+    static const char *const image_names[] = {
+        "8bit", "16bit", "portable_vertical", "portable_horizontal",
+        "recent", "favorite", "clock",
+    };
+
     if (!systems_background)
         systems_background = gui_get_image("background", "systems");
 
@@ -415,12 +427,6 @@ void gui_draw_system_selector(void)
         rg_gui_draw_image(0, 0, gui.width, gui.height, false, systems_background);
     else
         rg_gui_draw_rect(0, 0, gui.width, gui.height, 0, 0, C_HANDS_ON_LAB_BACKGROUND);
-
-    // The supplied artwork is definitive. Only its original labels are covered;
-    // the hardware illustration and technical frame remain untouched.
-    const int list_width = gui.width / 2;
-    rg_gui_draw_rect(7, 61, list_width - 7, gui.height - 82,
-                     0, 0, C_HANDS_ON_LAB_BACKGROUND);
 
     int enabled[RG_COUNT(gui.tabs)];
     int enabled_count = 0;
@@ -434,23 +440,97 @@ void gui_draw_system_selector(void)
         enabled[enabled_count++] = i;
     }
 
-    const int max_lines = 7;
-    const int visible = RG_MIN(enabled_count, max_lines);
-    int first = selected - visible / 2;
-    first = RG_MAX(0, RG_MIN(first, enabled_count - visible));
-    const int line_height = TEXT_RECT("ABC123", 0).height;
-    int top = (gui.height - visible * line_height) / 2;
+    if (enabled_count == 0)
+        return;
 
-    for (int line = 0; line < visible; ++line)
+    tab_t *current = gui.tabs[enabled[selected]];
+    tab_t *previous = gui.tabs[enabled[(selected + enabled_count - 1) % enabled_count]];
+    tab_t *next = gui.tabs[enabled[(selected + 1) % enabled_count]];
+
+    int image_types[3];
+    tab_t *cards[] = {previous, current, next};
+    for (int card = 0; card < 3; ++card)
     {
-        int tab_index = enabled[first + line];
-        bool is_selected = tab_index == gui.selected_tab;
-        rg_color_t foreground = is_selected ? C_HANDS_ON_LAB_BACKGROUND : C_HANDS_ON_LAB_FOREGROUND;
-        rg_color_t background = is_selected ? C_HANDS_ON_LAB_FOREGROUND : C_TRANSPARENT;
-        rg_gui_draw_text(12, top, list_width - 18, gui.tabs[tab_index]->desc,
-                         foreground, background, RG_TEXT_ALIGN_LEFT);
-        top += line_height;
+        const char *name = cards[card]->name;
+        int type = 0;
+
+        if (strcmp(name, "snes") == 0 || strcmp(name, "md") == 0 || strcmp(name, "pce") == 0)
+            type = 1;
+        else if (strcmp(name, "gb") == 0 || strcmp(name, "gbc") == 0)
+            type = 2;
+        else if (strcmp(name, "gba") == 0 || strcmp(name, "gg") == 0 ||
+                 strcmp(name, "lnx") == 0 || strcmp(name, "ngp") == 0)
+            type = 3;
+        else if (strcmp(name, "recent") == 0)
+            type = 4;
+        else if (strcmp(name, "favorite") == 0)
+            type = 5;
+        else if (strcmp(name, "gw") == 0)
+            type = 6;
+
+        image_types[card] = type;
+        if (!carousel_images[type])
+            carousel_images[type] = gui_get_image("carousel", image_names[type]);
     }
+
+    // Neighbor cards intentionally remain partially outside the screen: this
+    // makes the horizontal navigation discoverable without animation.
+    rg_gui_draw_rect(0, 64, 50, 108, 3, C_HANDS_ON_LAB_FOREGROUND, C_HANDS_ON_LAB_ACCENT);
+    rg_gui_draw_rect(gui.width - 50, 64, 50, 108, 3,
+                     C_HANDS_ON_LAB_FOREGROUND, C_HANDS_ON_LAB_ACCENT);
+    if (carousel_images[image_types[0]])
+        rg_gui_draw_image(1, 80, 48, 66, true, carousel_images[image_types[0]]);
+    if (carousel_images[image_types[2]])
+        rg_gui_draw_image(gui.width - 49, 80, 48, 66, true, carousel_images[image_types[2]]);
+
+    rg_gui_draw_rect(72, 38, 176, 148, 4,
+                     C_HANDS_ON_LAB_ACCENT, C_HANDS_ON_LAB_ACCENT);
+    rg_gui_draw_rect(78, 44, 164, 136, 3,
+                     C_HANDS_ON_LAB_FOREGROUND, C_HANDS_ON_LAB_ACCENT);
+    if (carousel_images[image_types[1]])
+        rg_gui_draw_image(96, 51, 128, 88, true, carousel_images[image_types[1]]);
+
+    const char *label = current->desc;
+    if (strcmp(current->name, "nes") == 0) label = "NINTENDO 8-BIT";
+    else if (strcmp(current->name, "snes") == 0) label = "SUPER NINTENDO";
+    else if (strcmp(current->name, "gb") == 0) label = "GAME BOY";
+    else if (strcmp(current->name, "gbc") == 0) label = "GAME BOY COLOR";
+    else if (strcmp(current->name, "gba") == 0) label = "GAME BOY ADVANCE";
+    else if (strcmp(current->name, "gw") == 0) label = "GAME & WATCH";
+    else if (strcmp(current->name, "sms") == 0) label = "MASTER SYSTEM";
+    else if (strcmp(current->name, "gg") == 0) label = "GAME GEAR";
+    else if (strcmp(current->name, "md") == 0) label = "MEGA DRIVE";
+    else if (strcmp(current->name, "col") == 0) label = "COLECOVISION";
+    else if (strcmp(current->name, "pce") == 0) label = "PC ENGINE";
+    else if (strcmp(current->name, "lnx") == 0) label = "ATARI LYNX";
+    else if (strcmp(current->name, "a26") == 0) label = "ATARI 2600";
+    else if (strcmp(current->name, "favorite") == 0) label = "FAVORITOS";
+    else if (strcmp(current->name, "recent") == 0) label = "RECENTES";
+
+    rg_gui_draw_text(80, 150, 160, label, C_HANDS_ON_LAB_BACKGROUND,
+                     C_TRANSPARENT, RG_TEXT_ALIGN_CENTER | RG_TEXT_BIGGER);
+    rg_gui_draw_text(54, 104, 18, "<", C_HANDS_ON_LAB_ACCENT,
+                     C_TRANSPARENT, RG_TEXT_ALIGN_CENTER | RG_TEXT_BIGGER);
+    rg_gui_draw_text(gui.width - 72, 104, 18, ">", C_HANDS_ON_LAB_ACCENT,
+                     C_TRANSPARENT, RG_TEXT_ALIGN_CENTER | RG_TEXT_BIGGER);
+
+    int dots_width = enabled_count * 7 - 2;
+    int dots_x = (gui.width - dots_width) / 2;
+    for (int dot = 0; dot < enabled_count; ++dot)
+    {
+        int size = dot == selected ? 5 : 3;
+        int y = 195 + (5 - size) / 2;
+        rg_gui_draw_rect(dots_x + dot * 7, y, size, size, 0, 0,
+                         dot == selected ? C_HANDS_ON_LAB_ACCENT : C_HANDS_ON_LAB_FOREGROUND);
+    }
+
+    if (!button_a)
+        button_a = gui_get_image("button", "a");
+    rg_gui_draw_rect(0, ACTIONS_TOP, gui.width, 1, 0, 0, C_HANDS_ON_LAB_FOREGROUND);
+    if (button_a)
+        rg_gui_draw_image(70, ACTIONS_TOP + 6, 18, 18, false, button_a);
+    rg_gui_draw_text(93, ACTIONS_TOP + 8, 96, "JOGOS", C_HANDS_ON_LAB_FOREGROUND,
+                     C_TRANSPARENT, RG_TEXT_ALIGN_LEFT);
 }
 
 void gui_draw_preview(tab_t *tab)
@@ -467,7 +547,7 @@ void gui_draw_preview(tab_t *tab)
 
         int panel_x = gui.width - PREVIEW_PANEL_WIDTH;
         int x = panel_x + (PREVIEW_PANEL_WIDTH - width) / 2;
-        int y = HEADER_HEIGHT + (gui.height - HEADER_HEIGHT - height) / 2;
+        int y = HEADER_HEIGHT + (ACTIONS_TOP - HEADER_HEIGHT - height) / 2;
 
         rg_gui_draw_rect(x - 2, y - 2, width + 4, height + 4, 2,
                          C_HANDS_ON_LAB_FOREGROUND, C_HANDS_ON_LAB_BACKGROUND);
@@ -553,12 +633,35 @@ void gui_draw_status(tab_t *tab)
 {
     const int status_x = LOGO_WIDTH + 12;
     const int status_y = HEADER_HEIGHT - 16;
+    const int status_width = gui.width - status_x - 88;
     char *txt_left = tab->status[tab->status[1].left[0] ? 1 : 0].left;
     char *txt_right = tab->status[tab->status[1].right[0] ? 1 : 0].right;
 
-    rg_gui_draw_text(status_x, status_y, gui.width - status_x, txt_right, gui.theme->foreground, C_TRANSPARENT, RG_TEXT_ALIGN_RIGHT);
+    rg_gui_draw_text(status_x, status_y, status_width, txt_right, gui.theme->foreground, C_TRANSPARENT, RG_TEXT_ALIGN_RIGHT);
     rg_gui_draw_text(status_x, status_y, 0, txt_left, gui.theme->foreground, C_TRANSPARENT, RG_TEXT_ALIGN_LEFT);
     rg_gui_draw_icons();
+}
+
+void gui_draw_actions(void)
+{
+    const int button_y = ACTIONS_TOP + 6;
+
+    if (!button_a)
+        button_a = gui_get_image("button", "a");
+    if (!button_b)
+        button_b = gui_get_image("button", "b");
+
+    rg_gui_draw_rect(0, ACTIONS_TOP, gui.width, 1, 0, 0, C_HANDS_ON_LAB_FOREGROUND);
+
+    if (button_a)
+        rg_gui_draw_image(6, button_y, 18, 18, false, button_a);
+    rg_gui_draw_text(27, button_y + 2, 72, "JOGAR", C_HANDS_ON_LAB_FOREGROUND,
+                     C_TRANSPARENT, RG_TEXT_ALIGN_LEFT);
+
+    if (button_b)
+        rg_gui_draw_image(gui.width - 92, button_y, 18, 18, false, button_b);
+    rg_gui_draw_text(gui.width - 69, button_y + 2, 69, "CONSOLES",
+                     C_HANDS_ON_LAB_FOREGROUND, C_TRANSPARENT, RG_TEXT_ALIGN_LEFT);
 }
 
 void gui_draw_list(tab_t *tab)
@@ -579,7 +682,7 @@ void gui_draw_list(tab_t *tab)
         top += rg_gui_draw_text(0, top, list_width, buffer, gui.theme->foreground, C_TRANSPARENT, 0).height;
     }
 
-    top += ((gui.height - top) - (lines * line_height)) / 2;
+    top += ((ACTIONS_TOP - top) - (lines * line_height)) / 2;
 
     if (gui.scroll_mode == SCROLL_MODE_PAGING)
     {
@@ -598,7 +701,7 @@ void gui_draw_list(tab_t *tab)
         int row_top = top;
         top += rg_gui_draw_text(0, top, list_width, label, fg[selected], bg[selected], 0).height;
         if (selected)
-            rg_gui_draw_rect(0, row_top, 3, line_height, 0, 0, C_GOLDEN_ROD);
+            rg_gui_draw_rect(0, row_top, 3, line_height, 0, 0, C_HANDS_ON_LAB_ACCENT);
     }
 }
 
