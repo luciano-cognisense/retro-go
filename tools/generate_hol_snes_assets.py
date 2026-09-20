@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the approved Hands on Lab SNES launcher artwork.
+"""Validate the approved Hands on Lab launcher artwork.
 
 The final artwork is manually authored at the display's native resolution. This
 script validates it instead of recreating the former placeholder design and
@@ -15,11 +15,19 @@ ROOT = Path(__file__).resolve().parents[1] / "themes" / "hands-on-lab"
 MAGENTA = (255, 0, 255)
 
 ASSETS = {
+    "background_systems.png": (320, 240),
     "background_snes.png": (320, 240),
     "banner_snes.png": (272, 24),
     "logo_snes.png": (46, 50),
     "button_a.png": (18, 18),
     "button_b.png": (18, 18),
+    "carousel_8bit.png": (128, 88),
+    "carousel_16bit.png": (128, 88),
+    "carousel_portable_vertical.png": (128, 88),
+    "carousel_portable_horizontal.png": (128, 88),
+    "carousel_recent.png": (128, 88),
+    "carousel_favorite.png": (128, 88),
+    "carousel_clock.png": (128, 88),
 }
 
 
@@ -44,4 +52,4 @@ def validate_asset(name: str, expected_size: tuple[int, int]) -> None:
 if __name__ == "__main__":
     for asset_name, asset_size in ASSETS.items():
         validate_asset(asset_name, asset_size)
-    print("Hands on Lab SNES launcher artwork is valid")
+    print("Hands on Lab launcher artwork is valid")
