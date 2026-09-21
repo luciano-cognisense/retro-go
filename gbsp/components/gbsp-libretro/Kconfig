@@ -14,4 +14,10 @@ menu "gpSP experiments"
             Excludes instruction fetch, DMA, PPU and addresses >= 0x10000000.
             Writes window totals to gbsp-memory.txt. Adds hot-path overhead;
             do not compare its timings with normal builds. Ignored with dynarec.
+    config GBSP_COMPACT_READS
+        bool "Share range check in interpreter scalar reads"
+        default n
+        help
+            Experimental scalar load layout. Preserves original handlers,
+            signed loads and timing. Compare against mapped RAM stores alone.
 endmenu

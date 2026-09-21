@@ -10,6 +10,7 @@
 #include "../components/gbsp-libretro/gba_cc_lut.h"
 #include "../components/gbsp-libretro/ram_store.h"
 #include "../components/gbsp-libretro/memory_profile.h"
+#include "../components/gbsp-libretro/read_path.h"
 
 // Build configuration only: these values do not verify hardware clocks.
 // Zero means unavailable, rather than guessing a configuration.
@@ -374,13 +375,13 @@ static void profile_flush(void)
         // 0x3fc.../0x3fd... is internal SRAM on the S3, 0x3c... is PSRAM.
         fprintf(fp, "\n=== gbsp %s | %s | iwram %s | fb %s | cache de ROM %dMB"
                     " | RAM interna no boot: %dKB livre, maior bloco %dKB"
-                    " | config compilada: dcache %dKB | psram %dMHz | fast_ram %d (%s) | memstats %d ===\n",
+                    " | config compilada: dcache %dKB | psram %dMHz | fast_ram %d (%s) | memstats %d | compact_reads %d ===\n",
                 app->version ? app->version : "?",
                 app->romPath ? rg_basename(app->romPath) : "?",
                 ((u32)iwram_ptr >> 24) == 0x3c ? "PSRAM" : "interna",
                 ((u32)currentUpdate->data >> 24) == 0x3c ? "PSRAM" : "interna",
                 (int)gamepak_buffer_count, internalFreeKB, internalBlockKB,
-                (int)RG_DCACHE_KB, (int)RG_PSRAM_MHZ, GBSP_FAST_RAM_WRITES_ACTIVE, GBSP_FAST_RAM_WRITES_IMPL, GBSP_MEMORY_PROFILE_ACTIVE);
+                (int)RG_DCACHE_KB, (int)RG_PSRAM_MHZ, GBSP_FAST_RAM_WRITES_ACTIVE, GBSP_FAST_RAM_WRITES_IMPL, GBSP_MEMORY_PROFILE_ACTIVE, GBSP_COMPACT_READS_ACTIVE);
         profileHeaderWritten = true;
     }
 

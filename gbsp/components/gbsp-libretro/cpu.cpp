@@ -21,6 +21,7 @@ extern "C" {
   #include "common.h"
   #include "cpu_instrument.h"
   #include "ram_store.h"
+  #include "read_path.h"
 }
 
 const u8 bit_count[256] =
@@ -862,6 +863,12 @@ const u32 spsr_masks[4] = { 0x00000000, 0x000000EF, 0xF0000000, 0xF00000EF };
     dest = (type)readaddress##size(map, (_address & 0x7FFF));                 \
   }                                                                           \
 }                                                                             \
+
+#if GBSP_COMPACT_READS_ACTIVE
+#undef fast_read_memory
+#define fast_read_memory(size, type, addr, dest, readfn) \
+    gbsp_compact_read(size, type, addr, dest, readfn)
+#endif
 
 #define fast_write_memory(size, type, address, value)                         \
 {                                                                             \
