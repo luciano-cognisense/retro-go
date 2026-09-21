@@ -22,6 +22,7 @@ extern "C" {
   #include "cpu_instrument.h"
   #include "ram_store.h"
   #include "read_path.h"
+  #include "register_list.h"
 }
 
 const u8 bit_count[256] =
@@ -1016,15 +1017,13 @@ inline cpu_alert_type exec_arm_block_mem(u32 rn, u32 reglist, s32 &cycles_remain
 
   arm_pc_offset(4);  // Advance PC
 
-  for (u32 i = 0; i < 16; i++)  {
-    if ((reglist >> i) & 0x01) {
-      if (mode == AccLoad) {
-        load_aligned32(address, reg[i]);
-      } else {
-        store_aligned32(address, (i == REG_PC) ? reg[REG_PC] + 4 : reg[i]);
-      }
-      address += 4;
+  gbsp_for_register(i, reglist, 16) {
+    if (mode == AccLoad) {
+      load_aligned32(address, reg[i]);
+    } else {
+      store_aligned32(address, (i == REG_PC) ? reg[REG_PC] + 4 : reg[i]);
     }
+    address += 4;
   }
 
   if (writeback && !writeback_first)
@@ -1065,22 +1064,18 @@ inline cpu_alert_type exec_thumb_block_mem(u32 rn, u32 reglist, s32 &cycles_rema
   thumb_pc_offset(2);  // Advance PC
 
   if (mode == AccLoad) {
-    for (u32 i = 0; i < 8; i++)  {
-      if ((reglist >> i) & 0x01) {
-        load_aligned32(address, reg[i]);
-        address += 4;
-      }
+    gbsp_for_register(i, reglist, 8) {
+      load_aligned32(address, reg[i]);
+      address += 4;
     }
     if (reglist & (1 << REG_PC)) {
       load_aligned32(address, reg[REG_PC]);
       reg[REG_PC] &= ~0x01;
     }
   } else {
-    for (u32 i = 0; i < 8; i++)  {
-      if ((reglist >> i) & 0x01) {
-        store_aligned32(address, reg[i]);
-        address += 4;
-      }
+    gbsp_for_register(i, reglist, 8) {
+      store_aligned32(address, reg[i]);
+      address += 4;
     }
     if (reglist & (1 << REG_LR)) {
       store_aligned32(address, reg[REG_LR]);

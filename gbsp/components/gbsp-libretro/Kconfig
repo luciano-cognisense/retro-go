@@ -20,4 +20,10 @@ menu "gpSP experiments"
         help
             Experimental scalar load layout. Preserves original handlers,
             signed loads and timing. Compare against mapped RAM stores alone.
+    config GBSP_SPARSE_REGISTERS
+        bool "Iterate selected registers in block transfers"
+        default n
+        help
+            Experimental ARM/Thumb register-list iteration using ctz.
+            Keeps transfer order, addresses, handlers and writeback unchanged.
 endmenu
