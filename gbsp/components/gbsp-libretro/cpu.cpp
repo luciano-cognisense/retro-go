@@ -244,7 +244,7 @@ const u8 bit_count[256] =
                      ((unsigned)src_b < (unsigned)src_a);                     \
 
 #define calculate_v_flag_sub(dest, src_a, src_b)                              \
-  v_flag = (((src_a ^ src_b) & (~src_b ^ dest)) >> 31)
+  v_flag = (((src_a ^ src_b) & (src_a ^ dest)) >> 31)
 
 #define calculate_v_flag_add(dest, src_a, src_b)                              \
   v_flag = ((~((src_a) ^ (src_b)) & ((src_a) ^ (dest))) >> 31)
