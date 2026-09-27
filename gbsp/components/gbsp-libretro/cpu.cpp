@@ -20,6 +20,8 @@
 extern "C" {
   #include "common.h"
   #include "cpu_instrument.h"
+  #include "cpsr_sync.h"
+  #include "fetch_path.h"
   #include "ram_store.h"
   #include "read_path.h"
   #include "register_list.h"
@@ -244,7 +246,7 @@ const u8 bit_count[256] =
                      ((unsigned)src_b < (unsigned)src_a);                     \
 
 #define calculate_v_flag_sub(dest, src_a, src_b)                              \
-  v_flag = (((src_a ^ src_b) & (~src_b ^ dest)) >> 31)
+  v_flag = (((src_a ^ src_b) & (src_a ^ dest)) >> 31)
 
 #define calculate_v_flag_add(dest, src_a, src_b)                              \
   v_flag = ((~((src_a) ^ (src_b)) & ((src_a) ^ (dest))) >> 31)
@@ -561,6 +563,22 @@ const u8 bit_count[256] =
   reg[REG_CPSR] = (n_flag << 31) | (z_flag << 30) | (c_flag << 29) |          \
    (v_flag << 28) | (reg[REG_CPSR] & 0xFF)                                    \
 
+#if GBSP_FETCH_PC_ACTIVE
+#define check_pc_region()                                                     \
+  new_pc_region = (fetch_pc >> 15);                                        \
+  if(new_pc_region != pc_region)                                              \
+  {                                                                           \
+    pc_region = new_pc_region;                                                \
+    pc_address_block = memory_map_read[new_pc_region];                        \
+    touch_gamepak_page(pc_region);                                            \
+                                                                              \
+    if(!pc_address_block)                                                     \
+      pc_address_block = load_gamepak_page(pc_region & 0x3FF);                \
+    fetch_pc = reg[REG_PC]; /* Preserve slow-path reload. */                  \
+  }                                                                           \
+
+
+#else
 #define check_pc_region()                                                     \
   new_pc_region = (reg[REG_PC] >> 15);                                        \
   if(new_pc_region != pc_region)                                              \
@@ -573,6 +591,8 @@ const u8 bit_count[256] =
       pc_address_block = load_gamepak_page(pc_region & 0x3FF);                \
   }                                                                           \
 
+
+#endif
 
 #define arm_pc_offset(val)                                                    \
   reg[REG_PC] += val                                                          \
@@ -792,6 +812,7 @@ const u32 spsr_masks[4] = { 0x00000000, 0x000000EF, 0xF0000000, 0xF00000EF };
   reg[rd] = psr_reg                                                           \
 
 #define arm_psr_store_cpsr(source)                                            \
+  collapse_flags_consumer();  /* reads the flag bits it does not overwrite */ \
   const u32 store_mask = cpsr_masks[psr_pfield][PRIVMODE(reg[CPU_MODE])];     \
   reg[REG_CPSR] = (source & store_mask) | (reg[REG_CPSR] & (~store_mask));    \
   extract_flags();                                                            \
@@ -1293,7 +1314,7 @@ inline cpu_alert_type exec_thumb_block_mem(u32 rn, u32 reglist, s32 &cycles_rema
   const u32 _sa = src_a;                                                      \
   const u32 _sb = src_b;                                                      \
   u32 dest = _sa - _sb;                                                       \
-  calculate_flags_sub(dest, src_a, src_b, 1);                                 \
+  calculate_flags_sub(dest, _sa, _sb, 1);                                     \
   thumb_pc_offset(2);                                                         \
 }                                                                             \
 
@@ -1470,9 +1491,16 @@ IRAM_ATTR void execute_arm(u32 cycles)
   u32 opcode;
   u32 condition;
   u32 n_flag, z_flag, c_flag, v_flag;
+  /* cheat_master_hook only changes via cheat_parse()/cheat_clear(), both
+   * called by the frontend outside of execute_arm; process_cheats() (called
+   * from inside the loop below) never writes it. Safe to snapshot once. */
+  u32 cheat_hook = cheat_master_hook;
   u32 pc_region = (reg[REG_PC] >> 15);
   u8 *pc_address_block = memory_map_read[pc_region];
   u32 new_pc_region;
+#if GBSP_FETCH_PC_ACTIVE
+  u32 fetch_pc;
+#endif
   s32 cycles_remaining;
   u32 update_ret;
   cpu_alert_type cpu_alert;
@@ -1503,17 +1531,25 @@ IRAM_ATTR void execute_arm(u32 cycles)
     {
 arm_loop:
 
-       collapse_flags();
+       collapse_flags_dispatch();
 
        /* Process cheats if we are about to execute the cheat hook */
-       if (reg[REG_PC] == cheat_master_hook)
+       if (reg[REG_PC] == cheat_hook)
           process_cheats();
 
        /* Execute ARM instruction */
        using_instruction(arm);
+#if GBSP_FETCH_PC_ACTIVE
+       fetch_pc = reg[REG_PC];
+       check_pc_region();
+       fetch_pc &= ~0x03;
+       reg[REG_PC] = fetch_pc;
+       opcode = readaddress32(pc_address_block, (fetch_pc & 0x7FFF));
+#else
        check_pc_region();
        reg[REG_PC] &= ~0x03;
        opcode = readaddress32(pc_address_block, (reg[REG_PC] & 0x7FFF));
+#endif
        condition = opcode >> 28;
 
        switch(condition)
@@ -2086,6 +2122,8 @@ arm_loop:
                    {
                       reg[REG_PC] = src - 1;
                       reg[REG_CPSR] |= 0x20;
+                      /* keeps the flags this read-modify-write carried over */
+                      collapse_flags_consumer();
                       goto thumb_loop;
                    }
                    else
@@ -3066,18 +3104,26 @@ skip_instruction:
     {
 thumb_loop:
 
-       collapse_flags();
+       collapse_flags_dispatch();
 
        /* Process cheats if we are about to execute the cheat hook */
-       if (reg[REG_PC] == cheat_master_hook)
+       if (reg[REG_PC] == cheat_hook)
           process_cheats();
 
        /* Execute THUMB instruction */
 
        using_instruction(thumb);
+#if GBSP_FETCH_PC_ACTIVE
+       fetch_pc = reg[REG_PC];
+       check_pc_region();
+       fetch_pc &= ~0x01;
+       reg[REG_PC] = fetch_pc;
+       opcode = readaddress16(pc_address_block, (fetch_pc & 0x7FFF));
+#else
        check_pc_region();
        reg[REG_PC] &= ~0x01;
        opcode = readaddress16(pc_address_block, (reg[REG_PC] & 0x7FFF));
+#endif
 
        #ifdef TRACE_INSTRUCTIONS
        interp_trace_instruction(reg[REG_PC], 0);
