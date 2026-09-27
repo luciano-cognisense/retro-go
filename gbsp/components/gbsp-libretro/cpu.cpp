@@ -20,6 +20,7 @@
 extern "C" {
   #include "common.h"
   #include "cpu_instrument.h"
+  #include "cpsr_sync.h"
   #include "ram_store.h"
   #include "read_path.h"
   #include "register_list.h"
@@ -792,6 +793,7 @@ const u32 spsr_masks[4] = { 0x00000000, 0x000000EF, 0xF0000000, 0xF00000EF };
   reg[rd] = psr_reg                                                           \
 
 #define arm_psr_store_cpsr(source)                                            \
+  collapse_flags_consumer();  /* reads the flag bits it does not overwrite */ \
   const u32 store_mask = cpsr_masks[psr_pfield][PRIVMODE(reg[CPU_MODE])];     \
   reg[REG_CPSR] = (source & store_mask) | (reg[REG_CPSR] & (~store_mask));    \
   extract_flags();                                                            \
@@ -1503,7 +1505,7 @@ IRAM_ATTR void execute_arm(u32 cycles)
     {
 arm_loop:
 
-       collapse_flags();
+       collapse_flags_dispatch();
 
        /* Process cheats if we are about to execute the cheat hook */
        if (reg[REG_PC] == cheat_master_hook)
@@ -2086,6 +2088,8 @@ arm_loop:
                    {
                       reg[REG_PC] = src - 1;
                       reg[REG_CPSR] |= 0x20;
+                      /* keeps the flags this read-modify-write carried over */
+                      collapse_flags_consumer();
                       goto thumb_loop;
                    }
                    else
@@ -3066,7 +3070,7 @@ skip_instruction:
     {
 thumb_loop:
 
-       collapse_flags();
+       collapse_flags_dispatch();
 
        /* Process cheats if we are about to execute the cheat hook */
        if (reg[REG_PC] == cheat_master_hook)

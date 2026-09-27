@@ -20,6 +20,24 @@ menu "gpSP experiments"
         help
             Experimental scalar load layout. Preserves original handlers,
             signed loads and timing. Compare against mapped RAM stores alone.
+    config GBSP_CPSR_CONSUMER_SYNC
+        bool "Sync CPSR flags at the sites that read them"
+        default n
+        help
+            Adds collapse_flags() to MSR and to BX ARM->Thumb, the only two
+            sites that need it and do not already do it. Idempotent while the
+            per-instruction sync is still in place, so this alone must not
+            change behaviour. Enable it first, and confirm that, before
+            enabling the lazy dispatch below. Ignored with dynarec.
+    config GBSP_CPSR_LAZY_DISPATCH
+        bool "Drop the per-instruction CPSR flag sync"
+        default n
+        select GBSP_CPSR_CONSUMER_SYNC
+        help
+            Removes collapse_flags() from the top of arm_loop/thumb_loop, so
+            the flag cache in reg[CPSR] is refreshed only by the consumers.
+            14 Xtensa instructions per interpreted instruction; whether that
+            becomes speed is a hardware question. Ignored with dynarec.
     config GBSP_SPARSE_REGISTERS
         bool "Iterate selected registers in block transfers"
         default n
