@@ -1472,6 +1472,10 @@ IRAM_ATTR void execute_arm(u32 cycles)
   u32 opcode;
   u32 condition;
   u32 n_flag, z_flag, c_flag, v_flag;
+  /* cheat_master_hook only changes via cheat_parse()/cheat_clear(), both
+   * called by the frontend outside of execute_arm; process_cheats() (called
+   * from inside the loop below) never writes it. Safe to snapshot once. */
+  u32 cheat_hook = cheat_master_hook;
   u32 pc_region = (reg[REG_PC] >> 15);
   u8 *pc_address_block = memory_map_read[pc_region];
   u32 new_pc_region;
@@ -1508,7 +1512,7 @@ arm_loop:
        collapse_flags_dispatch();
 
        /* Process cheats if we are about to execute the cheat hook */
-       if (reg[REG_PC] == cheat_master_hook)
+       if (reg[REG_PC] == cheat_hook)
           process_cheats();
 
        /* Execute ARM instruction */
@@ -3073,7 +3077,7 @@ thumb_loop:
        collapse_flags_dispatch();
 
        /* Process cheats if we are about to execute the cheat hook */
-       if (reg[REG_PC] == cheat_master_hook)
+       if (reg[REG_PC] == cheat_hook)
           process_cheats();
 
        /* Execute THUMB instruction */
