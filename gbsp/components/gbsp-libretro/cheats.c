@@ -207,6 +207,15 @@ void cheat_clear()
 
 cheat_error cheat_parse(unsigned index, const char *code)
 {
+#ifdef CONFIG_GBSP_NO_CHEAT_HOOK
+   /* The per-instruction hook test is compiled out of execute_arm() when
+    * this is set (Candidato A, passo 2). Accepting a code here would parse
+    * and mark it "active" while process_cheats() can never fire -- a silent
+    * no-op. Refuse loudly instead so a future cheat UI sees an error, not
+    * cheats that quietly never trigger. */
+   (void)index; (void)code;
+   return CheatErrorNotSupported;
+#else
    int pos = 0;
    int codelen = strlen(code);
    cheat_type *ch = &cheats[index];
@@ -260,6 +269,7 @@ cheat_error cheat_parse(unsigned index, const char *code)
 
    /* TODO parse other types here */
    return CheatErrorNotSupported;
+#endif
 }
 
 
