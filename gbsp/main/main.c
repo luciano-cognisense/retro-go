@@ -17,8 +17,8 @@
 // Profile header field, present only when the option is compiled in, so the
 // header of a build without it stays byte-for-byte what it was.
 #if GBSP_RENDER_ASYNC_ACTIVE
-#define RENDER_CORE1_FMT " | render_core1 %d (hibrido %d)"
-#define RENDER_CORE1_ARG , (int)gbsp_render_async_running(), GBSP_RENDER_HYBRID
+#define RENDER_CORE1_FMT " | render_core1 %d (hibrido %d, adaptativo %d)"
+#define RENDER_CORE1_ARG , (int)gbsp_render_async_running(), GBSP_RENDER_HYBRID, GBSP_RENDER_ADAPTIVE
 #else
 #define RENDER_CORE1_FMT ""
 #define RENDER_CORE1_ARG
@@ -483,11 +483,20 @@ static void profile_flush(void)
                 mhz > 0 ? (unsigned)(rs.worker_ticks / mhz) : 0, (unsigned)rs.stack_free);
 #if GBSP_RENDER_HYBRID
         fprintf(fp, "render_hibrido linhas_sincronas %u | jobs %u | quadros %u | primeira_assincrona min %u mediana %u max %u"
-                    " | display_voltou %u | decisao_us %u | latencia_inicio_us media %u max %u\n",
+                    " | display_voltou %u | decisao_us %u\n",
                 (unsigned)rs.sync_lines, (unsigned)rs.jobs, (unsigned)rs.drawn_frames,
                 (unsigned)rs.first_async_min, (unsigned)rs.first_async_median, (unsigned)rs.first_async_max,
-                (unsigned)rs.display_returns, mhz > 0 ? (unsigned)(rs.decision_ticks / mhz) : 0,
-                rs.jobs ? (unsigned)(rs.start_lat_us_sum / rs.jobs) : 0, (unsigned)rs.start_lat_us_max);
+                (unsigned)rs.display_returns, mhz > 0 ? (unsigned)(rs.decision_ticks / mhz) : 0);
+#if GBSP_RENDER_ADAPTIVE
+        fprintf(fp, "render_adaptativo sinc_display %u | sinc_abandono %u | jobs %u | quadros_abandonados %u de %u | linha_abandono_mediana %u"
+                    " | custo_sinc_ns %u | custo_job_ns %u | ganho_estimado_us %d | invariante %s\n",
+                (unsigned)rs.sync_lines, (unsigned)rs.sync_adaptive_lines, (unsigned)rs.jobs,
+                (unsigned)rs.frames_abandoned, (unsigned)rs.drawn_frames, (unsigned)rs.abandon_line_median,
+                (mhz > 0 && rs.sync_cost_n) ? (unsigned)((uint64_t)rs.sync_cost_sum * 1000 / mhz / rs.sync_cost_n) : 0,
+                (mhz > 0 && rs.job_cost_n) ? (unsigned)((uint64_t)rs.job_cost_sum * 1000 / mhz / rs.job_cost_n) : 0,
+                mhz > 0 ? (int)(rs.est_gain_ticks / mhz) : 0,
+                rs.sync_lines + rs.sync_adaptive_lines + rs.jobs == 160u * rs.drawn_frames ? "ok" : "FALHA");
+#endif
 #endif
     }
 #endif

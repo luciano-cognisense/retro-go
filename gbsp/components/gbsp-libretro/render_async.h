@@ -45,6 +45,17 @@
   #define GBSP_RENDER_HYBRID 0
 #endif
 
+// Adaptive per-frame controller (CONFIG_GBSP_RENDER_CORE1_ADAPTIVE): within a
+// frame, compare what core 0 pays per line handed to the worker (submit +
+// waits) with what it pays to render a line itself, both measured in that
+// frame; give the worker up for the rest of the frame when it stops paying.
+#if GBSP_RENDER_HYBRID && defined(CONFIG_GBSP_RENDER_CORE1_ADAPTIVE) && \
+    CONFIG_GBSP_RENDER_CORE1_ADAPTIVE
+  #define GBSP_RENDER_ADAPTIVE 1
+#else
+  #define GBSP_RENDER_ADAPTIVE 0
+#endif
+
 #if GBSP_RENDER_ASYNC_ACTIVE && defined(CONFIG_GBSP_RENDER_CORE1_STATS) && \
     CONFIG_GBSP_RENDER_CORE1_STATS
   #define GBSP_RENDER_ASYNC_STATS 1
@@ -93,21 +104,31 @@ typedef struct
   u32 stack_free;    // worker stack high-water mark, bytes never used
   // Hybrid policy (zero without it):
   u32 sync_lines;        // lines rendered on core 0 because the display was active
+  // Adaptive controller (zero without it):
+  u32 sync_adaptive_lines;   // lines rendered on core 0 after a frame gave up the worker
+  u32 frames_abandoned;
+  u32 abandon_line_median;
+  u32 sync_cost_sum, sync_cost_n;   // ticks inside update_scanline() on display lines
+  u32 job_cost_sum, job_cost_n;     // settled job cost (submit + decision + waits), before abandoning
+  int64_t est_gain_ticks;           // sum over frames of (avg sync - job cost) per settled job
   u32 drawn_frames;      // frames with at least one line (sync_lines + jobs == 160 * this)
   u32 first_async_min;   // first line sent to the worker, per frame (160 = none)
   u32 first_async_median;
   u32 first_async_max;
   u32 display_returns;   // display active again after an async line, same frame
   u32 decision_ticks;    // core 0 CCOUNT ticks spent asking rg_display_is_active()
-  u32 start_lat_us_sum;  // submit -> worker start, esp_timer microseconds
-  u32 start_lat_us_max;
 } gbsp_render_stats_t;
 void gbsp_render_stats_take(gbsp_render_stats_t *out);  // read and reset
-void gbsp_render_stats_frame_end(void);
-#define GBSP_RENDER_FRAME_END() gbsp_render_stats_frame_end()
+#endif
+
+void gbsp_render_state_reset(void);   // clears per-frame controller state
+#if GBSP_RENDER_ASYNC_STATS || GBSP_RENDER_ADAPTIVE
+void gbsp_render_frame_end(void);
+#define GBSP_RENDER_FRAME_END() gbsp_render_frame_end()
 #else
 #define GBSP_RENDER_FRAME_END() do { } while (0)
 #endif
+#define GBSP_RENDER_STATE_RESET() gbsp_render_state_reset()
 
 // Does a DMA write anything in palette/VRAM/OAM, i.e. in [0x05000000,
 // 0x08000000)? The interval is the one the transfer really touches: units
@@ -142,6 +163,7 @@ static inline bool gbsp_render_dma_touches_video(u32 dst, u32 units, u32 unit_sh
 #define GBSP_RENDER_SCANLINE() update_scanline()
 #define GBSP_RENDER_BARRIER()  do { } while (0)
 #define GBSP_RENDER_FRAME_END() do { } while (0)
+#define GBSP_RENDER_STATE_RESET() do { } while (0)
 
 #endif
 

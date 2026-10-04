@@ -112,6 +112,7 @@ bool bson_read_bytes(const u8 *srcp, const char *key, void* buffer, unsigned cnt
 bool gba_load_state(const void* src)
 {
   GBSP_RENDER_BARRIER();
+  GBSP_RENDER_STATE_RESET();
   u32 i, tmp;
   u8* srcptr = (u8*)src;
   u32 docsize = bson_read_u32(srcptr);

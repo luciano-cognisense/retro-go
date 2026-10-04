@@ -93,6 +93,19 @@ menu "gpSP experiments"
             core 0 after draining any pending job; only afterwards are they
             handed to the core 1 worker. The worker keeps its priority below
             the display. Prototype: not measured on hardware.
+    config GBSP_RENDER_CORE1_ADAPTIVE
+        bool "Per-frame adaptive choice between the worker and core 0"
+        depends on GBSP_RENDER_CORE1_HYBRID
+        default n
+        help
+            Measures, within each frame and in core 0 cycles per line, what
+            rendering on core 0 costs (lines rendered while the display was
+            active) and what handing a line to the worker costs core 0
+            (submit plus every wait paid while that job was pending). After
+            4 synchronous lines and 8 settled jobs, if the worker costs at
+            least 7/8 of rendering here, the pending job is drained and the
+            rest of the frame renders on core 0. Starts over every frame.
+            Prototype: not measured on hardware.
     config GBSP_RENDER_CORE1_STATS
         bool "Count render worker jobs, waits and busy time"
         depends on GBSP_RENDER_CORE1
