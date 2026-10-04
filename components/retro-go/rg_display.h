@@ -109,6 +109,9 @@ void rg_display_clear_rect(int left, int top, int width, int height, uint16_t co
 void rg_display_clear_except(int left, int top, int width, int height, uint16_t color_le);
 void rg_display_clear(uint16_t color_le);
 bool rg_display_is_busy(void);
+// True from rg_display_submit() until the display task has finished that frame,
+// lcd_sync() included. rg_display_is_busy() only reports a non-empty queue.
+bool rg_display_is_active(void);
 void rg_display_force_redraw(void);
 void rg_display_submit(const rg_surface_t *update, uint32_t flags);
 // rg_display_sync syncs our internal state to the display. With ILI9341/ST7789 it's a no-op because all writes

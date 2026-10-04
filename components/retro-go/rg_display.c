@@ -1,4 +1,5 @@
 #include "rg_system.h"
+#include "rg_display_activity.h"
 #include "rg_display.h"
 
 #include <stdlib.h>
@@ -10,6 +11,7 @@
 
 // static rg_display_driver_t driver;
 static rg_task_t *display_task_queue;
+static rg_display_activity_t display_activity;
 static rg_display_counters_t counters;
 static rg_display_config_t config;
 static rg_surface_t *border;
@@ -418,6 +420,7 @@ static void display_task(void *arg)
         rg_task_receive(&msg, -1);
 
         lcd_sync();
+        rg_display_activity_completed(&display_activity); // only now: see rg_display_activity.h
     }
 }
 
@@ -544,6 +547,7 @@ void rg_display_submit(const rg_surface_t *update, uint32_t flags)
     if (!update || !update->data)
         return;
 
+    rg_display_activity_submitted(&display_activity);
     rg_task_send(display_task_queue, &(rg_task_msg_t){.dataPtr = update}, -1);
 
     counters.blockTime += rg_system_timer() - time_start;
@@ -553,6 +557,11 @@ void rg_display_submit(const rg_surface_t *update, uint32_t flags)
 bool rg_display_is_busy(void)
 {
     return rg_task_messages_waiting(display_task_queue) != 0;
+}
+
+bool rg_display_is_active(void)
+{
+    return rg_display_activity_is_active(&display_activity);
 }
 
 void rg_display_sync(void)
