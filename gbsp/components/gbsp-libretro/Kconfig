@@ -61,4 +61,14 @@ menu "gpSP experiments"
             code with CheatErrorNotSupported instead of accepting one that
             can never fire. Turn this off again before wiring up any cheat
             UI. Host-diff verified; never measured on hardware in isolation.
+    config GBSP_CPU_RODATA_DRAM
+        bool "Place cpu.cpp read-only data (dispatch tables) in internal DRAM"
+        default n
+        help
+            Maps the .rodata of cpu.cpp (the jump tables used by the ARM
+            condition/opcode and Thumb opcode dispatch in execute_arm, plus
+            bit_count, cpu_modes and PSR masks, ~3KB) to internal DRAM
+            instead of flash-mapped rodata, which shares the data cache
+            with PSRAM. Instructions are unchanged; only table addresses
+            move. Costs internal DRAM. Never measured on hardware.
 endmenu

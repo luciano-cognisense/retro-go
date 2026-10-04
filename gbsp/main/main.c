@@ -13,6 +13,12 @@
 #include "../components/gbsp-libretro/read_path.h"
 #include "../components/gbsp-libretro/register_list.h"
 
+#if defined(CONFIG_GBSP_CPU_RODATA_DRAM) && CONFIG_GBSP_CPU_RODATA_DRAM
+#define GBSP_CPU_RODATA_DRAM_ACTIVE 1
+#else
+#define GBSP_CPU_RODATA_DRAM_ACTIVE 0
+#endif
+
 // Build configuration only: these values do not verify hardware clocks.
 // Zero means unavailable, rather than guessing a configuration.
 #ifdef CONFIG_ESP32S3_DATA_CACHE_SIZE
@@ -376,13 +382,13 @@ static void profile_flush(void)
         // 0x3fc.../0x3fd... is internal SRAM on the S3, 0x3c... is PSRAM.
         fprintf(fp, "\n=== gbsp %s | %s | iwram %s | fb %s | cache de ROM %dMB"
                     " | RAM interna no boot: %dKB livre, maior bloco %dKB"
-                    " | config compilada: dcache %dKB | psram %dMHz | fast_ram %d (%s) | memstats %d | compact_reads %d | sparse_regs %d ===\n",
+                    " | config compilada: dcache %dKB | psram %dMHz | fast_ram %d (%s) | memstats %d | compact_reads %d | sparse_regs %d | cpu_rodata_dram %d ===\n",
                 app->version ? app->version : "?",
                 app->romPath ? rg_basename(app->romPath) : "?",
                 ((u32)iwram_ptr >> 24) == 0x3c ? "PSRAM" : "interna",
                 ((u32)currentUpdate->data >> 24) == 0x3c ? "PSRAM" : "interna",
                 (int)gamepak_buffer_count, internalFreeKB, internalBlockKB,
-                (int)RG_DCACHE_KB, (int)RG_PSRAM_MHZ, GBSP_FAST_RAM_WRITES_ACTIVE, GBSP_FAST_RAM_WRITES_IMPL, GBSP_MEMORY_PROFILE_ACTIVE, GBSP_COMPACT_READS_ACTIVE, GBSP_SPARSE_REGISTERS_ACTIVE);
+                (int)RG_DCACHE_KB, (int)RG_PSRAM_MHZ, GBSP_FAST_RAM_WRITES_ACTIVE, GBSP_FAST_RAM_WRITES_IMPL, GBSP_MEMORY_PROFILE_ACTIVE, GBSP_COMPACT_READS_ACTIVE, GBSP_SPARSE_REGISTERS_ACTIVE, GBSP_CPU_RODATA_DRAM_ACTIVE);
         profileHeaderWritten = true;
     }
 

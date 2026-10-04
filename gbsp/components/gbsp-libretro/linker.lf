@@ -1,0 +1,9 @@
+# Experimental: place cpu.cpp read-only data (compiler-generated jump tables
+# of execute_arm's ARM condition/opcode and Thumb opcode dispatch, bit_count,
+# cpu_modes, psr masks) in internal DRAM instead of flash-mapped rodata.
+# Code is unchanged; only the addresses loaded by l32r move.
+[mapping:gbsp_cpu_rodata]
+archive: libgbsp-libretro.a
+entries:
+    if GBSP_CPU_RODATA_DRAM = y:
+        cpu (noflash_data)
