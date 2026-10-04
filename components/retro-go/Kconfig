@@ -1,0 +1,12 @@
+menu "Retro-Go"
+    config RG_DISPLAY_ACTIVITY
+        bool "Track display task activity (rg_display_is_active)"
+        default n
+        help
+            Adds rg_display_is_active(): true from rg_display_submit() until
+            the display task has finished that frame, lcd_sync() included
+            (rg_display_is_busy() keeps reporting only a non-empty queue).
+            Costs one increment per submitted frame and one store per
+            displayed frame. Off by default; an application that needs it
+            selects it (gbsp's hybrid render does).
+endmenu
