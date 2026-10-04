@@ -2106,8 +2106,11 @@ cpu_alert_type dma_transfer(unsigned dma_chan, int *usedcycles)
 
 #if GBSP_RENDER_ASYNC_ACTIVE
   // Palette, VRAM and OAM belong to a pending scanline job (I/O goes through
-  // write_io_register16(), which has its own barrier).
-  if (((dst_ptr >> 24) - 5u) <= 2u || ((dst_end >> 24) - 5u) <= 2u)
+  // write_io_register16(), which has its own barrier). Test the whole interval
+  // the transfer touches, not dst_end: that one is computed in u32 with a
+  // negative stride and only looks at the two ends.
+  if (gbsp_render_dma_touches_video(dst_ptr, dmach->length, tfsizes,
+                                    dma_stride[dmach->dest_direction]))
     GBSP_RENDER_BARRIER();
 #endif
 

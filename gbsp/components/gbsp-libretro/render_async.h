@@ -1,6 +1,9 @@
 #ifndef GBSP_RENDER_ASYNC_H
 #define GBSP_RENDER_ASYNC_H
 
+#include <stdbool.h>
+#include <stdint.h>
+
 // Include after common.h (u16/u32 and io_registers).
 //
 // Experimental: render one scanline on core 1 while core 0 keeps emulating
@@ -79,6 +82,31 @@ typedef struct
 } gbsp_render_stats_t;
 void gbsp_render_stats_take(gbsp_render_stats_t *out);  // read and reset
 #endif
+
+// Does a DMA write anything in palette/VRAM/OAM, i.e. in [0x05000000,
+// 0x08000000)? The interval is the one the transfer really touches: units
+// written at dst + k * stride * unit for k = 0 .. units-1, with stride +1
+// (increment/reload), -1 (decrement) or 0 (fixed). Computed in 64 bits, so no
+// length or start can overflow it; a transfer that would leave the 28-bit bus
+// (below 0 or past 0x0FFFFFFF) is treated as touching video, conservatively.
+// The emulator itself only ever writes inside this interval (each chunk of
+// dma_transfer() starts inside it), so this is a superset of its writes.
+static inline bool gbsp_render_dma_touches_video(u32 dst, u32 units, u32 unit_shift, int stride)
+{
+  const int64_t video_lo = 0x05000000, video_hi = 0x08000000;  // [lo, hi)
+  if (units == 0)
+    return false;
+  const int64_t unit = (int64_t)1 << unit_shift;
+  const int64_t span = (int64_t)(units - 1) << unit_shift;     // first to last unit
+  int64_t lo = dst, hi = (int64_t)dst + unit;                   // fixed
+  if (stride > 0)
+    hi += span;
+  else if (stride < 0)
+    lo -= span;
+  if (lo < 0 || hi > 0x10000000)
+    return true;
+  return lo < video_hi && hi > video_lo;
+}
 
 #define GBSP_RENDER_SCANLINE() gbsp_render_async_submit()
 #define GBSP_RENDER_BARRIER()  gbsp_render_barrier()
