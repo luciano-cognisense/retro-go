@@ -21,6 +21,17 @@ static bool ra_running;
 static u32 ra_jobs, ra_waits, ra_waits_submit, ra_wait_ticks;   // core 0 only
 static volatile u32 ra_worker_ticks;           // core 1 only, monotonic
 static u32 ra_worker_ticks_seen;
+static u32 ra_sync_lines, ra_drawn_frames, ra_display_returns, ra_decision_ticks;
+static u16 ra_first_async_hist[161];           // per window, index 160 = no async line
+static int ra_frame_first_async = -1, ra_frame_lines;
+static bool ra_prev_async;
+static volatile u32 ra_submit_stamp_us;        // written by core 0 before the wakeup
+static volatile u32 ra_lat_sum_us, ra_lat_max_us;  // core 1 only, monotonic sum
+static u32 ra_lat_sum_seen;
+#endif
+
+#if GBSP_RENDER_HYBRID
+bool rg_display_is_active(void);               // rg_display.c (host: the test harness)
 #endif
 
 #ifdef ESP_PLATFORM
@@ -28,6 +39,7 @@ static u32 ra_worker_ticks_seen;
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <esp_cpu.h>
+#include <esp_timer.h>
 
 // Internal SRAM, no data cache in between: aligned 32-bit loads and stores
 // are atomic, and MEMW orders them across the two cores.
@@ -35,6 +47,7 @@ static u32 ra_worker_ticks_seen;
 #define RA_STORE(v, x)  ((v) = (x))
 #define RA_FENCE()      __asm__ __volatile__("memw" ::: "memory")
 #define RA_TICKS()      esp_cpu_get_cycle_count()
+#define RA_TIME_US()    ((u32)esp_timer_get_time())
 
 // Core 1 already runs rg_display and rg_input at priority 6 and may run
 // rg_sysmon (priority 5, no affinity). The worker sits below all of them: it
@@ -63,6 +76,12 @@ static void ra_sleep_short(void)  { vTaskDelay(1); }
 #define RA_STORE(v, x)  __atomic_store_n(&(v), (x), __ATOMIC_SEQ_CST)
 #define RA_FENCE()      __atomic_thread_fence(__ATOMIC_SEQ_CST)
 #define RA_TICKS()      0u
+#include <time.h>
+static u32 RA_TIME_US(void)
+{
+  struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (u32)(ts.tv_sec * 1000000u + ts.tv_nsec / 1000);
+}
 
 typedef struct { pthread_mutex_t m; pthread_cond_t c; int token; } ra_token_t;
 static ra_token_t ra_tok_worker = { PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER, 0 };
@@ -102,6 +121,12 @@ static void ra_worker_loop(void)
 
 #if GBSP_RENDER_ASYNC_STATS
     u32 t0 = RA_TICKS();
+    {
+      u32 lat = RA_TIME_US() - ra_submit_stamp_us;
+      ra_lat_sum_us += lat;
+      if (lat > ra_lat_max_us)
+        ra_lat_max_us = lat;
+    }
 #endif
     gbsp_video_io = ra_io_copy;
 #ifndef ESP_PLATFORM
@@ -198,6 +223,35 @@ void gbsp_render_async_submit(void)
   // update_scanline() returns before touching anything on a skipped frame.
   if (skip_next_frame)
     return;
+#if GBSP_RENDER_ASYNC_STATS
+  ra_frame_lines++;
+#endif
+
+#if GBSP_RENDER_HYBRID
+  {
+#if GBSP_RENDER_ASYNC_STATS
+    u32 d0 = RA_TICKS();
+#endif
+    bool display_active = rg_display_is_active();
+#if GBSP_RENDER_ASYNC_STATS
+    ra_decision_ticks += RA_TICKS() - d0;
+#endif
+    if (display_active)
+    {
+      // Core 1 is the display's. Render this line here, after the previous
+      // job: lines stay in order and the shared state is ours again.
+      gbsp_render_barrier();
+#if GBSP_RENDER_ASYNC_STATS
+      ra_sync_lines++;
+      if (ra_prev_async)
+        ra_display_returns++;
+      ra_prev_async = false;
+#endif
+      update_scanline();
+      return;
+    }
+  }
+#endif
 
 #if GBSP_RENDER_ASYNC_STATS
   if (RA_LOAD(gbsp_render_pending))
@@ -208,6 +262,10 @@ void gbsp_render_async_submit(void)
     ra_io_copy[i] = io_registers[i];
 #if GBSP_RENDER_ASYNC_STATS
   ra_jobs++;
+  if (ra_frame_first_async < 0)
+    ra_frame_first_async = read_ioreg(REG_VCOUNT);
+  ra_prev_async = true;
+  ra_submit_stamp_us = RA_TIME_US();
 #endif
   RA_FENCE();
   RA_STORE(gbsp_render_pending, 1);
@@ -233,8 +291,49 @@ void gbsp_render_async_wait(void)
 }
 
 #if GBSP_RENDER_ASYNC_STATS
+void gbsp_render_stats_frame_end(void)
+{
+  if (ra_frame_lines > 0)
+  {
+    ra_drawn_frames++;
+    ra_first_async_hist[ra_frame_first_async < 0 ? 160 : ra_frame_first_async]++;
+  }
+  ra_frame_lines = 0;
+  ra_frame_first_async = -1;
+  ra_prev_async = false;
+}
+
 void gbsp_render_stats_take(gbsp_render_stats_t *out)
 {
+  // Per-frame first async line: min, median (lower) and max over the window.
+  u32 n = 0, seen = 0;
+  bool have_min = false, have_median = false;
+  out->first_async_min = out->first_async_median = out->first_async_max = 0;
+  for (unsigned i = 0; i <= 160; i++)
+    n += ra_first_async_hist[i];
+  for (unsigned i = 0; i <= 160; i++)
+  {
+    if (!ra_first_async_hist[i])
+      continue;
+    if (!have_min)
+      out->first_async_min = i, have_min = true;
+    seen += ra_first_async_hist[i];
+    if (!have_median && 2 * seen >= n)
+      out->first_async_median = i, have_median = true;
+    out->first_async_max = i;
+  }
+  memset(ra_first_async_hist, 0, sizeof(ra_first_async_hist));
+  out->sync_lines = ra_sync_lines;
+  out->drawn_frames = ra_drawn_frames;
+  out->display_returns = ra_display_returns;
+  out->decision_ticks = ra_decision_ticks;
+  {
+    u32 now = ra_lat_sum_us;           // core 1 only: aligned, tear-free
+    out->start_lat_us_sum = now - ra_lat_sum_seen;
+    ra_lat_sum_seen = now;
+  }
+  out->start_lat_us_max = ra_lat_max_us;  // since boot (core 1 only writer)
+  ra_sync_lines = ra_drawn_frames = ra_display_returns = ra_decision_ticks = 0;
   out->jobs = ra_jobs;
   out->waits = ra_waits;
   out->waits_submit = ra_waits_submit;

@@ -33,6 +33,18 @@
   #define GBSP_RENDER_ASYNC_ACTIVE 0
 #endif
 
+// Hybrid policy (CONFIG_GBSP_RENDER_CORE1_HYBRID): while the display task may
+// still be using core 1 for the previous frame (rg_display_is_active(), which
+// covers the queue, write_update() and lcd_sync()), lines are rendered here on
+// core 0, after draining any pending job; only once it is done do they go to
+// the worker. No fixed line count: the switch follows the display itself.
+#if GBSP_RENDER_ASYNC_ACTIVE && defined(CONFIG_GBSP_RENDER_CORE1_HYBRID) && \
+    CONFIG_GBSP_RENDER_CORE1_HYBRID
+  #define GBSP_RENDER_HYBRID 1
+#else
+  #define GBSP_RENDER_HYBRID 0
+#endif
+
 #if GBSP_RENDER_ASYNC_ACTIVE && defined(CONFIG_GBSP_RENDER_CORE1_STATS) && \
     CONFIG_GBSP_RENDER_CORE1_STATS
   #define GBSP_RENDER_ASYNC_STATS 1
@@ -79,8 +91,22 @@ typedef struct
   u32 wait_ticks;    // core 0 CCOUNT ticks spent blocked in those barriers
   u32 worker_ticks;  // core 1 CCOUNT ticks spent inside update_scanline()
   u32 stack_free;    // worker stack high-water mark, bytes never used
+  // Hybrid policy (zero without it):
+  u32 sync_lines;        // lines rendered on core 0 because the display was active
+  u32 drawn_frames;      // frames with at least one line (sync_lines + jobs == 160 * this)
+  u32 first_async_min;   // first line sent to the worker, per frame (160 = none)
+  u32 first_async_median;
+  u32 first_async_max;
+  u32 display_returns;   // display active again after an async line, same frame
+  u32 decision_ticks;    // core 0 CCOUNT ticks spent asking rg_display_is_active()
+  u32 start_lat_us_sum;  // submit -> worker start, esp_timer microseconds
+  u32 start_lat_us_max;
 } gbsp_render_stats_t;
 void gbsp_render_stats_take(gbsp_render_stats_t *out);  // read and reset
+void gbsp_render_stats_frame_end(void);
+#define GBSP_RENDER_FRAME_END() gbsp_render_stats_frame_end()
+#else
+#define GBSP_RENDER_FRAME_END() do { } while (0)
 #endif
 
 // Does a DMA write anything in palette/VRAM/OAM, i.e. in [0x05000000,
@@ -115,6 +141,7 @@ static inline bool gbsp_render_dma_touches_video(u32 dst, u32 units, u32 unit_sh
 
 #define GBSP_RENDER_SCANLINE() update_scanline()
 #define GBSP_RENDER_BARRIER()  do { } while (0)
+#define GBSP_RENDER_FRAME_END() do { } while (0)
 
 #endif
 

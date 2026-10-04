@@ -17,8 +17,8 @@
 // Profile header field, present only when the option is compiled in, so the
 // header of a build without it stays byte-for-byte what it was.
 #if GBSP_RENDER_ASYNC_ACTIVE
-#define RENDER_CORE1_FMT " | render_core1 %d"
-#define RENDER_CORE1_ARG , (int)gbsp_render_async_running()
+#define RENDER_CORE1_FMT " | render_core1 %d (hibrido %d)"
+#define RENDER_CORE1_ARG , (int)gbsp_render_async_running(), GBSP_RENDER_HYBRID
 #else
 #define RENDER_CORE1_FMT ""
 #define RENDER_CORE1_ARG
@@ -481,6 +481,14 @@ static void profile_flush(void)
         fprintf(fp, "render_core1 jobs %u | esperas %u (no envio %u) | espera_us %u | worker_us %u | pilha_livre %u bytes\n",
                 (unsigned)rs.jobs, (unsigned)rs.waits, (unsigned)rs.waits_submit, mhz > 0 ? (unsigned)(rs.wait_ticks / mhz) : 0,
                 mhz > 0 ? (unsigned)(rs.worker_ticks / mhz) : 0, (unsigned)rs.stack_free);
+#if GBSP_RENDER_HYBRID
+        fprintf(fp, "render_hibrido linhas_sincronas %u | jobs %u | quadros %u | primeira_assincrona min %u mediana %u max %u"
+                    " | display_voltou %u | decisao_us %u | latencia_inicio_us media %u max %u\n",
+                (unsigned)rs.sync_lines, (unsigned)rs.jobs, (unsigned)rs.drawn_frames,
+                (unsigned)rs.first_async_min, (unsigned)rs.first_async_median, (unsigned)rs.first_async_max,
+                (unsigned)rs.display_returns, mhz > 0 ? (unsigned)(rs.decision_ticks / mhz) : 0,
+                rs.jobs ? (unsigned)(rs.start_lat_us_sum / rs.jobs) : 0, (unsigned)rs.start_lat_us_max);
+#endif
     }
 #endif
     fclose(fp);

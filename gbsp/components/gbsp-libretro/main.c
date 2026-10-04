@@ -288,6 +288,7 @@ u32 function_cc update_gba(int remaining_cycles)
 
           // We completed a frame, tell the dynarec to exit to the main thread
           GBSP_RENDER_BARRIER();  // nothing pending outside execute_arm()
+          GBSP_RENDER_FRAME_END();
           frame_complete = 0x80000000;
           frame_counter++;
         }

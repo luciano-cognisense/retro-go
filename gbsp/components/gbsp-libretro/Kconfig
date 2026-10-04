@@ -82,6 +82,17 @@ menu "gpSP experiments"
             renderer's own state waits for it first. Falls back to the
             synchronous path if the task cannot be created. Prototype: not
             measured on hardware.
+    config GBSP_RENDER_CORE1_HYBRID
+        bool "Render on core 0 while the display task is active"
+        depends on GBSP_RENDER_CORE1
+        default n
+        help
+            While rg_display_is_active() reports that the display task may
+            still be using core 1 for the previous frame (queued, in
+            write_update() or in lcd_sync()), scanlines are rendered on
+            core 0 after draining any pending job; only afterwards are they
+            handed to the core 1 worker. The worker keeps its priority below
+            the display. Prototype: not measured on hardware.
     config GBSP_RENDER_CORE1_STATS
         bool "Count render worker jobs, waits and busy time"
         depends on GBSP_RENDER_CORE1
