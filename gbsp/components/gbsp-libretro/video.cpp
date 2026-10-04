@@ -20,7 +20,15 @@
 
 extern "C" {
   #include "common.h"
+  #include "render_async.h"
 }
+
+#if GBSP_RENDER_ASYNC_ACTIVE
+// The worker renders from a copy of the video registers taken at submit time
+// (render_async.h); the synchronous path still reads io_registers directly.
+#undef read_ioreg
+#define read_ioreg(regnum) (eswap16(gbsp_video_io[(regnum)]))
+#endif
 
 u16* gba_screen_pixels = NULL;
 

@@ -18,6 +18,7 @@
  */
 
 #include "common.h"
+#include "render_async.h"
 #include "streams/file_stream.h"
 #include "bios/open_gba_bios.h"
 
@@ -823,6 +824,14 @@ cpu_alert_type function_cc write_io_register16(u32 address, u32 value)
 {
   uint16_t ioreg = (address & 0x3FE) >> 1;
   value &= 0xffff;
+#if GBSP_RENDER_ASYNC_ACTIVE
+  // The job carries its own copy of the video registers, except for these
+  // side effects on state it shares: OAM_UPDATED and affine_reference_*.
+  if (ioreg == REG_DISPCNT ||
+      (ioreg >= REG_BG2X_L && ioreg <= REG_BG2Y_H) ||
+      (ioreg >= REG_BG3X_L && ioreg <= REG_BG3Y_H))
+    GBSP_RENDER_BARRIER();
+#endif
   switch(ioreg)
   {
     case REG_DISPCNT:
@@ -1446,6 +1455,7 @@ void function_cc write_gpio(u32 address, u32 value) {
                                                                               \
     case 0x05:                                                                \
       /* palette RAM */                                                       \
+      GBSP_RENDER_BARRIER();                                                  \
       write_palette##type(address & 0x3FF, value);                            \
       break;                                                                  \
                                                                               \
@@ -1455,12 +1465,14 @@ void function_cc write_gpio(u32 address, u32 value) {
       if(address >= 0x18000)                                                  \
         address -= 0x8000;                                                    \
                                                                               \
+      GBSP_RENDER_BARRIER();                                                  \
       write_vram##type();                                                     \
       break;                                                                  \
                                                                               \
     case 0x07:                                                                \
       /* OAM RAM */                                                           \
       if (type != 8) {                                                        \
+        GBSP_RENDER_BARRIER();                                                \
         reg[OAM_UPDATED] = 1;                                                 \
         address##type(oam_ram, address & 0x3FF) = eswap##type(value);         \
       }                                                                       \
@@ -2091,6 +2103,16 @@ cpu_alert_type dma_transfer(unsigned dma_chan, int *usedcycles)
   dma_region_type src_reg1 = dma_region_map[src_end >> 24];
   dma_region_type dst_reg0 = dma_region_map[dst_ptr >> 24];
   dma_region_type dst_reg1 = dma_region_map[dst_end >> 24];
+
+#if GBSP_RENDER_ASYNC_ACTIVE
+  // Palette, VRAM and OAM belong to a pending scanline job (I/O goes through
+  // write_io_register16(), which has its own barrier). Test the whole interval
+  // the transfer touches, not dst_end: that one is computed in u32 with a
+  // negative stride and only looks at the two ends.
+  if (gbsp_render_dma_touches_video(dst_ptr, dmach->length, tfsizes,
+                                    dma_stride[dmach->dest_direction]))
+    GBSP_RENDER_BARRIER();
+#endif
 
   if (src_reg0 == src_reg1 && dst_reg0 == dst_reg1)
     ret = dma_transfer_copy(dmach, src_ptr, dst_ptr, byte_length >> tfsizes);
