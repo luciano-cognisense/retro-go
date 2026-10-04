@@ -18,6 +18,7 @@
  */
 
 #include "common.h"
+#include "render_async.h"
 
 const u8 *state_mem_read_ptr;
 u8 *state_mem_write_ptr;
@@ -110,6 +111,7 @@ bool bson_read_bytes(const u8 *srcp, const char *key, void* buffer, unsigned cnt
 
 bool gba_load_state(const void* src)
 {
+  GBSP_RENDER_BARRIER();
   u32 i, tmp;
   u8* srcptr = (u8*)src;
   u32 docsize = bson_read_u32(srcptr);
@@ -161,6 +163,7 @@ bool gba_load_state(const void* src)
 
 void gba_save_state(void* dst)
 {
+  GBSP_RENDER_BARRIER();
   u8 *stptr = (u8*)dst;
   u8 *wrptr = (u8*)dst;
 

@@ -18,6 +18,7 @@
  */
 
 #include "common.h"
+#include "render_async.h"
 #include <ctype.h>
 
 #ifdef RETRO_GO
@@ -188,8 +189,13 @@ u32 function_cc update_gba(int remaining_cycles)
           u32 i;
 
           // Render the scan line
+#if GBSP_RENDER_ASYNC_ACTIVE
+          // reg[OAM_UPDATED] belongs to the pending scanline job; this debug
+          // counter (printed only by commented-out code) is not kept here.
+#else
           if(reg[OAM_UPDATED])
             oam_update_count++;
+#endif
 
 #ifdef RETRO_GO
           // The profile log used to lump this into "emu", because update_gba()
@@ -207,14 +213,14 @@ u32 function_cc update_gba(int remaining_cycles)
           // checks skip_next_frame), so this correctly charges it almost nothing.
           {
             uint32_t _t0 = esp_cpu_get_cycle_count();
-            update_scanline();
+            GBSP_RENDER_SCANLINE();
             // u32 subtraction wraps correctly; the accumulator is 64-bit because
             // a 300-frame window can otherwise overflow it.
             gbsp_scanline_ticks += (uint32_t)(esp_cpu_get_cycle_count() - _t0);
             gbsp_scanline_count++;
           }
 #else
-          update_scanline();
+          GBSP_RENDER_SCANLINE();
 #endif
 
           // Trigger the HBlank DMAs if enabled
@@ -243,6 +249,7 @@ u32 function_cc update_gba(int remaining_cycles)
           dispstat |= 0x01;
 
           // Reinit affine transformation counters for the next frame
+          GBSP_RENDER_BARRIER();
           video_reload_counters();
 
           // Trigger VBlank interrupt if enabled
@@ -280,6 +287,7 @@ u32 function_cc update_gba(int remaining_cycles)
           render_gbc_sound();
 
           // We completed a frame, tell the dynarec to exit to the main thread
+          GBSP_RENDER_BARRIER();  // nothing pending outside execute_arm()
           frame_complete = 0x80000000;
           frame_counter++;
         }
@@ -352,6 +360,7 @@ u32 function_cc update_gba(int remaining_cycles)
 
 void reset_gba(void)
 {
+  GBSP_RENDER_BARRIER();
   init_memory();
   init_main();
   init_cpu();

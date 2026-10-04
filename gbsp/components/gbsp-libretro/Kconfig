@@ -71,4 +71,21 @@ menu "gpSP experiments"
             instead of flash-mapped rodata, which shares the data cache
             with PSRAM. Instructions are unchanged; only table addresses
             move. Costs internal DRAM. Never measured on hardware.
+    config GBSP_RENDER_CORE1
+        bool "Render scanlines on core 1 (experimental)"
+        default n
+        help
+            Hands each visible scanline to a worker task pinned to core 1,
+            below rg_display/rg_input, while core 0 keeps emulating. At most
+            one job is pending; it renders from a copy of the video I/O
+            registers, and every other writer of VRAM, OAM, palette or the
+            renderer's own state waits for it first. Falls back to the
+            synchronous path if the task cannot be created. Prototype: not
+            measured on hardware.
+    config GBSP_RENDER_CORE1_STATS
+        bool "Count render worker jobs, waits and busy time"
+        depends on GBSP_RENDER_CORE1
+        default n
+        help
+            Adds a render_core1 line to the profile log. Diagnostic only.
 endmenu

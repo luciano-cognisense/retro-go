@@ -12,6 +12,17 @@
 #include "../components/gbsp-libretro/memory_profile.h"
 #include "../components/gbsp-libretro/read_path.h"
 #include "../components/gbsp-libretro/register_list.h"
+#include "../components/gbsp-libretro/render_async.h"
+
+// Profile header field, present only when the option is compiled in, so the
+// header of a build without it stays byte-for-byte what it was.
+#if GBSP_RENDER_ASYNC_ACTIVE
+#define RENDER_CORE1_FMT " | render_core1 %d"
+#define RENDER_CORE1_ARG , (int)gbsp_render_async_running()
+#else
+#define RENDER_CORE1_FMT ""
+#define RENDER_CORE1_ARG
+#endif
 
 #if defined(CONFIG_GBSP_CPU_RODATA_DRAM) && CONFIG_GBSP_CPU_RODATA_DRAM
 #define GBSP_CPU_RODATA_DRAM_ACTIVE 1
@@ -382,13 +393,13 @@ static void profile_flush(void)
         // 0x3fc.../0x3fd... is internal SRAM on the S3, 0x3c... is PSRAM.
         fprintf(fp, "\n=== gbsp %s | %s | iwram %s | fb %s | cache de ROM %dMB"
                     " | RAM interna no boot: %dKB livre, maior bloco %dKB"
-                    " | config compilada: dcache %dKB | psram %dMHz | fast_ram %d (%s) | memstats %d | compact_reads %d | sparse_regs %d | cpu_rodata_dram %d ===\n",
+                    " | config compilada: dcache %dKB | psram %dMHz | fast_ram %d (%s) | memstats %d | compact_reads %d | sparse_regs %d | cpu_rodata_dram %d" RENDER_CORE1_FMT " ===\n",
                 app->version ? app->version : "?",
                 app->romPath ? rg_basename(app->romPath) : "?",
                 ((u32)iwram_ptr >> 24) == 0x3c ? "PSRAM" : "interna",
                 ((u32)currentUpdate->data >> 24) == 0x3c ? "PSRAM" : "interna",
                 (int)gamepak_buffer_count, internalFreeKB, internalBlockKB,
-                (int)RG_DCACHE_KB, (int)RG_PSRAM_MHZ, GBSP_FAST_RAM_WRITES_ACTIVE, GBSP_FAST_RAM_WRITES_IMPL, GBSP_MEMORY_PROFILE_ACTIVE, GBSP_COMPACT_READS_ACTIVE, GBSP_SPARSE_REGISTERS_ACTIVE, GBSP_CPU_RODATA_DRAM_ACTIVE);
+                (int)RG_DCACHE_KB, (int)RG_PSRAM_MHZ, GBSP_FAST_RAM_WRITES_ACTIVE, GBSP_FAST_RAM_WRITES_IMPL, GBSP_MEMORY_PROFILE_ACTIVE, GBSP_COMPACT_READS_ACTIVE, GBSP_SPARSE_REGISTERS_ACTIVE, GBSP_CPU_RODATA_DRAM_ACTIVE RENDER_CORE1_ARG);
         profileHeaderWritten = true;
     }
 
@@ -463,6 +474,15 @@ static void profile_flush(void)
             (int)gbsp_scanline_count);
 
     gbsp_memory_profile_write(fp, (unsigned)n);
+#if GBSP_RENDER_ASYNC_STATS
+    {
+        gbsp_render_stats_t rs;
+        gbsp_render_stats_take(&rs);
+        fprintf(fp, "render_core1 jobs %u | esperas %u (no envio %u) | espera_us %u | worker_us %u | pilha_livre %u bytes\n",
+                (unsigned)rs.jobs, (unsigned)rs.waits, (unsigned)rs.waits_submit, mhz > 0 ? (unsigned)(rs.wait_ticks / mhz) : 0,
+                mhz > 0 ? (unsigned)(rs.worker_ticks / mhz) : 0, (unsigned)rs.stack_free);
+    }
+#endif
     fclose(fp);
     profile_reset_window();
 }
@@ -577,6 +597,9 @@ static void event_handler(int event, void *arg)
     }
     else if (event == RG_EVENT_SHUTDOWN)
     {
+#if GBSP_RENDER_ASYNC_ACTIVE
+        gbsp_render_async_stop();
+#endif
         if (gamepak_backup_dirty)
             sram_save();
         profile_flush();
@@ -813,6 +836,11 @@ void app_main(void)
 
     RG_LOGI("reset_gba");
     reset_gba();
+
+#if GBSP_RENDER_ASYNC_ACTIVE
+    if (!gbsp_render_async_start())
+        RG_LOGE("render_core1: worker not created, rendering on core 0");
+#endif
 
     // Load the cartridge backup first, unconditionally. A save state now
     // carries its own copy (gba_memory.c, "backup-data") and will overwrite
