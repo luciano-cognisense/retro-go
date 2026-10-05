@@ -211,7 +211,7 @@ extern uint64_t esp_rtc_get_time_us(void);
 #define AUDIO_SYNC_MIN_RATE  (AUDIO_SAMPLE_RATE / 4)
 
 static int audioSync = 1;
-static int audioRate = AUDIO_SAMPLE_RATE; // rate currently programmed on the DAC
+static int audioRate = AUDIO_SAMPLE_RATE; // rate the DAC consumes (see "DAC clock" below)
 static int audioCapability = 0;           // last window's measurement, for the log
 static int audioStarving = 0;             // consecutive windows with the ring draining
 static int audioHistory[AUDIO_SYNC_HISTORY];
@@ -219,6 +219,181 @@ static int audioHistoryLen = 0, audioHistoryPos = 0;
 static int64_t audioWindowStart = 0;      // RTC microseconds
 static uint32_t audioWindowFrames = 0;    // frames handed to the DAC this window
 static int64_t audioWindowBlocked = 0;    // us spent inside rg_audio_submit
+
+// The DAC clock under overclock (ESP32-S3).
+//
+// Everything above assumes that programming 32768Hz makes the DAC consume 32768
+// samples a second. On the S3 under overclock it does not. The legacy I2S driver
+// clocks from PLL_F160M, which is BBPLL / 3, and rg_system_set_overclock() works
+// by raising the BBPLL divider -- so the I2S clock goes up with the CPU clock:
+// at oc 2 (280MHz) by 280/240, and "32768Hz" really consumes ~38230 samples a
+// second. rg_system_set_overclock() corrects the audio for that on the original
+// ESP32 only. The consequences in the oc 2 log are the two things the player
+// noticed: emulation is only held back above 116% of realtime (62-69fps in light
+// scenes, with submit never blocking), and below that the ring is always short by
+// the same ~14%, so the hardware replays stale buffers -- the buzz audio sync was
+// built to remove -- and every programmed rate also plays 2.7 semitones sharp.
+//
+// So the rate the controller asks for is kept as the rate the DAC must actually
+// consume, and what is programmed is that scaled by nominal/actual CPU clock.
+// The actual clock is measured, not derived from the overclock level: CCOUNT
+// counts the CPU clock (BBPLL / 2) and esp_timer runs on the systimer, which on
+// the S3 is fed by the crystal and does not move with the overclock ("clk" has
+// stayed at 0.99-1.00 at 280MHz). Over 50ms that is good to a few parts in 1e5,
+// against +-0.4% for the integer rg_system_get_cpu_speed() figure, which comes
+// from the RTC slow clock. Measured once per overclock level change, i.e. on
+// the way out of a menu, never per frame.
+#if defined(CONFIG_GBSP_AUDIO_CLOCK_COMP) && CONFIG_GBSP_AUDIO_CLOCK_COMP
+#define GBSP_AUDIO_CLOCK_COMP 1
+#else
+#define GBSP_AUDIO_CLOCK_COMP 0
+#endif
+#if defined(CONFIG_GBSP_AUDIO_PACING_STATS) && CONFIG_GBSP_AUDIO_PACING_STATS
+#define GBSP_AUDIO_PACING_STATS 1
+#else
+#define GBSP_AUDIO_PACING_STATS 0
+#endif
+
+#if GBSP_AUDIO_CLOCK_COMP
+#include <freertos/FreeRTOS.h>
+#include <esp_timer.h>
+#include <esp_cpu.h>
+
+#define AUDIO_CLOCK_NOMINAL_HZ ((int64_t)CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ * 1000000)
+#define AUDIO_CLOCK_MEASURE_MS 50
+
+static int audioClockLevel = 0;                        // overclock level audioClockHz belongs to
+static int64_t audioClockHz = AUDIO_CLOCK_NOMINAL_HZ;  // actual CPU clock = BBPLL / 2
+static int audioClockMeasures = 0;                     // for the log and the tests
+
+static int64_t audio_clock_measure(void)
+{
+    static portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
+    int64_t t0, t1;
+    uint32_t c0, c1;
+
+    // Read each pair back to back with interrupts off, so that a pair is never
+    // split by an interrupt; the delay in between runs with them on.
+    portENTER_CRITICAL(&lock);
+    t0 = esp_timer_get_time();
+    c0 = esp_cpu_get_cycle_count();
+    portEXIT_CRITICAL(&lock);
+    rg_task_delay(AUDIO_CLOCK_MEASURE_MS);
+    portENTER_CRITICAL(&lock);
+    t1 = esp_timer_get_time();
+    c1 = esp_cpu_get_cycle_count();
+    portEXIT_CRITICAL(&lock);
+    audioClockMeasures++;
+
+    // CCOUNT is 32 bits and wraps every ~15s at 280MHz; one wrap inside 50ms is
+    // what the unsigned difference handles. Anything implausible -- a clock
+    // that did not move, or one more than 2x off -- is not trusted, and the DAC
+    // is left exactly as without this option.
+    const int64_t elapsed = t1 - t0;
+    const int64_t hz = elapsed > 0 ? (int64_t)(uint32_t)(c1 - c0) * 1000000 / elapsed : 0;
+    if (hz < AUDIO_CLOCK_NOMINAL_HZ / 2 || hz > AUDIO_CLOCK_NOMINAL_HZ * 2)
+    {
+        RG_LOGE("audio clock: implausible measurement (%d kHz), not compensating", (int)(hz / 1000));
+        return AUDIO_CLOCK_NOMINAL_HZ;
+    }
+    return hz;
+}
+
+// What to program so that the DAC consumes `rate` samples a second.
+static int audio_dac_rate(int rate)
+{
+    return (int)(((int64_t)rate * AUDIO_CLOCK_NOMINAL_HZ + audioClockHz / 2) / audioClockHz);
+}
+
+static void audio_dac_set(int rate)
+{
+    rg_audio_set_sample_rate(audio_dac_rate(rate));
+}
+
+// Called before the loop and on the way out of every menu, which is the only
+// place the overclock can change. Without overclock nothing is measured and the
+// factor is exactly 1, so oc 0 programs the same rates as without this option.
+static void audio_clock_sync(void)
+{
+    const int level = rg_system_get_overclock();
+    if (level == audioClockLevel)
+        return;
+    audioClockLevel = level;
+    audioClockHz = level ? audio_clock_measure() : AUDIO_CLOCK_NOMINAL_HZ;
+    RG_LOGI("audio clock: oc %d, cpu %d kHz, DAC programmed %dHz for %dHz",
+            level, (int)(audioClockHz / 1000), audio_dac_rate(audioRate), audioRate);
+    audio_dac_set(audioRate);
+}
+// Profile line field, present only when compiled in (same rule as render_core1).
+#define AUDIO_CLOCK_FMT " | dac_programado %dHz (cpu %d kHz)"
+#define AUDIO_CLOCK_ARG , audio_dac_rate(audioRate), (int)(audioClockHz / 1000)
+#define AUDIO_CLOCK_KHZ ((int)(audioClockHz / 1000))
+#else
+#define audio_dac_set(rate) rg_audio_set_sample_rate(rate)
+#define audio_clock_sync() do { } while (0)
+#define AUDIO_CLOCK_FMT ""
+#define AUDIO_CLOCK_ARG
+#define AUDIO_CLOCK_KHZ (-1)
+#endif
+
+#if GBSP_AUDIO_PACING_STATS
+// Diagnostic only: one line per profile window, nothing per frame. Consumption
+// and underruns come from the I2S driver's own events (CONFIG_RG_AUDIO_I2S_EVENTS):
+// one TX_DONE per DMA buffer played, and TX_Q_OVF when a buffer finished while
+// every other one was still free, i.e. the hardware went on to replay stale data.
+enum { AUDIO_WHY_NOMINAL, AUDIO_WHY_DEFICIT, AUDIO_WHY_HYSTERESIS, AUDIO_WHY_COUNT };
+static struct
+{
+    int64_t start;              // esp_timer, us
+    int64_t produced;           // samples submitted
+    int64_t occupancy, occMin, occMax; // estimate: submitted - played since the last replay
+    uint32_t done0, overflow0, doneLast, overflowLast;
+    int bufferLen;              // frames per DMA buffer, as reported by the driver
+    int submitMax, submitSlow;  // longest submit (us), submits over 1ms
+    int changes[AUDIO_WHY_COUNT];
+    int ahead, behind;          // 1s audio windows above 102% / below 98% of realtime
+} audioStats;
+
+static void audio_stats_reset(void)
+{
+    memset(&audioStats, 0, sizeof(audioStats));
+    audioStats.bufferLen = rg_audio_i2s_get_events(&audioStats.done0, &audioStats.overflow0);
+    audioStats.doneLast = audioStats.done0;
+    audioStats.overflowLast = audioStats.overflow0;
+    audioStats.occMin = INT64_MAX;
+    audioStats.occMax = INT64_MIN;
+    audioStats.start = rg_system_timer();
+}
+
+static void audio_stats_frame(int samples, int64_t submitUs)
+{
+    uint32_t done, overflow;
+    rg_audio_i2s_get_events(&done, &overflow);
+    audioStats.produced += samples;
+    audioStats.occupancy += samples - (int64_t)(done - audioStats.doneLast) * audioStats.bufferLen;
+    if (overflow != audioStats.overflowLast || audioStats.occupancy < 0)
+        audioStats.occupancy = 0; // a replay means the ring was empty: re-anchor the estimate
+    audioStats.doneLast = done;
+    audioStats.overflowLast = overflow;
+    audioStats.occMin = RG_MIN(audioStats.occMin, audioStats.occupancy);
+    audioStats.occMax = RG_MAX(audioStats.occMax, audioStats.occupancy);
+    audioStats.submitMax = RG_MAX(audioStats.submitMax, (int)submitUs);
+    audioStats.submitSlow += submitUs > 1000;
+}
+#define AUDIO_PACING_RESET() audio_stats_reset()
+#define AUDIO_PACING_FRAME(samples, us) audio_stats_frame(samples, us)
+#define AUDIO_PACING_CHANGE(why) (audioStats.changes[why]++)
+// Throughput, not capability: whether the game actually ran ahead of or behind
+// realtime in that second. +-2% because the window is timed on the RTC, which
+// has disagreed with the crystal by up to ~1.2% per boot in the logs.
+#define AUDIO_PACING_WINDOW(rate) (audioStats.ahead += (rate) * 100 > AUDIO_SAMPLE_RATE * 102, \
+                                   audioStats.behind += (rate) * 100 < AUDIO_SAMPLE_RATE * 98)
+#else
+#define AUDIO_PACING_RESET() do { } while (0)
+#define AUDIO_PACING_FRAME(samples, us) do { } while (0)
+#define AUDIO_PACING_CHANGE(why) do { } while (0)
+#define AUDIO_PACING_WINDOW(cap) do { } while (0)
+#endif
 
 // Start a fresh measuring window, keeping the history. Called whenever real time
 // passed without emulation in it -- a menu, a card write -- since that dead time
@@ -275,6 +450,7 @@ static void audio_sync_update(void)
     // lowers the next measurement, which lowers the rate again, all the way to
     // the floor.
     audioCapability = (int)(frames * 1000000 / (elapsed - blocked));
+    AUDIO_PACING_WINDOW(frames * 1000000 / elapsed);
 
     audioHistory[audioHistoryPos] = audioCapability;
     audioHistoryPos = (audioHistoryPos + 1) % AUDIO_SYNC_HISTORY;
@@ -316,10 +492,12 @@ static void audio_sync_update(void)
 
     if (move)
     {
+        AUDIO_PACING_CHANGE(target == AUDIO_SAMPLE_RATE ? AUDIO_WHY_NOMINAL
+                            : audioStarving >= AUDIO_SYNC_STARVE ? AUDIO_WHY_DEFICIT : AUDIO_WHY_HYSTERESIS);
         audioRate = target;
         audioStarving = 0;
         profile.audioRateChanges++;
-        rg_audio_set_sample_rate(audioRate);
+        audio_dac_set(audioRate);
     }
 }
 
@@ -343,6 +521,7 @@ static bool screenshot_handler(const char *filename, int width, int height)
 static void profile_reset_window(void)
 {
     memset(&profile, 0, sizeof(profile));
+    AUDIO_PACING_RESET();
     profile.rtcStart = (int64_t)esp_rtc_get_time_us();
     gamepak_page_faults = 0;
     gamepak_page_time = 0;
@@ -456,7 +635,7 @@ static void profile_flush(void)
                 " | video %d | audio %d (preparo %d | envio %d) | display %d | total %d us"
                 " | residual_janela %d us"
                 " | %d qps | clk %d.%02d | vel %d%% | ocupado %d%%"
-                " | dac %dHz (cap %d, %d trocas) | %d chamadas de scanline\n",
+                " | dac %dHz (cap %d, %d trocas)" AUDIO_CLOCK_FMT " | %d chamadas de scanline\n",
             n, profile.drawn, n - profile.drawn,
             rg_system_get_overclock(), mhz, skipShown, forcedFrameskip >= 0 ? "f" : "",
             (int)(profile.input * perFrame), (int)(profile.emu * perFrame),
@@ -470,10 +649,31 @@ static void profile_flush(void)
             (int)(profile.total ? (1000000.0 * n / profile.total) : 0),
             (int)(clk + 0.005), (int)((clk + 0.005 - (int)(clk + 0.005)) * 100),
             (int)(stats.speedPercent + 0.5f), (int)(stats.busyPercent + 0.5f),
-            audioRate, audioCapability, profile.audioRateChanges,
+            audioRate, audioCapability, profile.audioRateChanges AUDIO_CLOCK_ARG,
             (int)gbsp_scanline_count);
 
     gbsp_memory_profile_write(fp, (unsigned)n);
+#if GBSP_AUDIO_PACING_STATS
+    {
+        // Rates over the stats window on esp_timer (crystal), which starts at the
+        // last menu exit or window flush, whichever came later.
+        uint32_t done, overflow;
+        rg_audio_i2s_get_events(&done, &overflow);
+        const int64_t us = rg_system_timer() - audioStats.start;
+        const int64_t played = (int64_t)(uint32_t)(done - audioStats.done0) * audioStats.bufferLen;
+        const bool any = audioStats.produced > 0 && us > 0;
+        fprintf(fp, "ritmo_audio %d ms | cpu %d kHz | dac pedido %dHz programado %dHz | consumo_real %dHz | produzido %dHz"
+                    " | repetidos %u de %u buffers | envio max %d us, >1ms %d | ocupacao_est min %d max %d"
+                    " | trocas nominal %d deficit %d histerese %d | janelas_1s acima %d abaixo %d\n",
+                (int)(us / 1000), AUDIO_CLOCK_KHZ, audioRate, rg_audio_get_sample_rate(),
+                any ? (int)(played * 1000000 / us) : 0, any ? (int)(audioStats.produced * 1000000 / us) : 0,
+                (unsigned)(overflow - audioStats.overflow0), (unsigned)(done - audioStats.done0),
+                audioStats.submitMax, audioStats.submitSlow,
+                any ? (int)audioStats.occMin : -1, any ? (int)audioStats.occMax : -1,
+                audioStats.changes[AUDIO_WHY_NOMINAL], audioStats.changes[AUDIO_WHY_DEFICIT],
+                audioStats.changes[AUDIO_WHY_HYSTERESIS], audioStats.ahead, audioStats.behind);
+    }
+#endif
 #if GBSP_RENDER_ASYNC_STATS
     {
         gbsp_render_stats_t rs;
@@ -672,7 +872,7 @@ static rg_gui_event_t audio_sync_cb(rg_gui_option_t *option, rg_gui_event_t even
         else
         {
             audioRate = AUDIO_SAMPLE_RATE;
-            rg_audio_set_sample_rate(audioRate);
+            audio_dac_set(audioRate);
         }
     }
 
@@ -877,7 +1077,9 @@ void app_main(void)
     // static, not on the stack: 2.6KB now that we ask for a full 50fps frame.
     static rg_audio_sample_t mixbuffer[AUDIO_BUFFER_LENGTH];
 
+    audio_clock_sync();
     audio_sync_reset();
+    AUDIO_PACING_RESET();
     profile_reset_window();
 
     while (true)
@@ -902,7 +1104,9 @@ void app_main(void)
             // slowdown. The history goes too, not just the window: the menu is
             // exactly where overclock and frameskip change, so what it holds
             // describes a machine that may no longer exist.
+            audio_clock_sync();
             audio_sync_reset();
+            AUDIO_PACING_RESET();
             continue;
         }
 
@@ -938,6 +1142,7 @@ void app_main(void)
 
         audioWindowFrames += frames_count;
         audioWindowBlocked += afterAudio - beforeSubmit;
+        AUDIO_PACING_FRAME(frames_count, afterAudio - beforeSubmit);
         if (audioSync)
             audio_sync_update();
 
