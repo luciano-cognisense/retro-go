@@ -54,3 +54,7 @@ bool rg_audio_get_mute(void);
 void rg_audio_set_mute(bool mute);
 int rg_audio_get_sample_rate(void);
 void rg_audio_set_sample_rate(int sample_rate);
+// I2S DMA buffers played and underrun buffers (stale data replayed) since boot;
+// returns the frames per DMA buffer. Only defined when CONFIG_RG_AUDIO_I2S_EVENTS
+// is enabled (diagnostic).
+int rg_audio_i2s_get_events(uint32_t *done, uint32_t *overflow);

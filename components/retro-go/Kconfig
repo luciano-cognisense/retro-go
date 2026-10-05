@@ -9,4 +9,13 @@ menu "Retro-Go"
             Costs one increment per submitted frame and one store per
             displayed frame. Off by default; an application that needs it
             selects it (gbsp's hybrid render does).
+    config RG_AUDIO_I2S_EVENTS
+        bool "Count I2S DMA buffer events (rg_audio_i2s_get_events)"
+        default n
+        help
+            Installs the legacy I2S driver with an event queue and counts, in
+            rg_audio_submit(), the buffers the DMA has played (TX_DONE) and the
+            ones it finished while every other buffer was free (TX_Q_OVF), i.e.
+            underruns that replay stale data. Diagnostic: adds an ISR queue send
+            per DMA buffer. Off by default; gbsp's audio pacing stats select it.
 endmenu

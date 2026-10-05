@@ -40,6 +40,40 @@
 #define DMA_BUFFER_COUNT RG_AUDIO_DMA_BUFFER_COUNT
 #define DMA_BUFFER_LEN RG_AUDIO_DMA_BUFFER_LEN
 
+#if defined(CONFIG_RG_AUDIO_I2S_EVENTS) && CONFIG_RG_AUDIO_I2S_EVENTS
+// Diagnostic event counting, see rg_audio_i2s_get_events(). The queue is drained
+// on every submit, which runs at least once per emulated frame; 32 entries cover
+// ~170ms of 180-frame buffers at 32kHz between two drains. While nothing submits
+// (a menu) it fills and the driver drops the extra events, so counts across a
+// menu are not meaningful -- callers re-baseline after one.
+#define EVENT_QUEUE_LEN 32
+static QueueHandle_t event_queue;
+static uint32_t events_done, events_overflow;
+#define EVENT_QUEUE_ARGS EVENT_QUEUE_LEN, &event_queue
+
+static void drain_events(void)
+{
+    i2s_event_t event;
+    while (event_queue && xQueueReceive(event_queue, &event, 0) == pdTRUE)
+    {
+        if (event.type == I2S_EVENT_TX_DONE)
+            events_done++;
+        else if (event.type == I2S_EVENT_TX_Q_OVF)
+            events_overflow++;
+    }
+}
+
+int rg_audio_i2s_get_events(uint32_t *done, uint32_t *overflow)
+{
+    drain_events();
+    *done = events_done;
+    *overflow = events_overflow;
+    return DMA_BUFFER_LEN;
+}
+#else
+#define EVENT_QUEUE_ARGS 0, NULL
+#endif
+
 static struct {
     const char *last_error;
     int device;
@@ -64,7 +98,7 @@ static bool driver_init(int device, int sample_rate)
             .intr_alloc_flags = 0, // ESP_INTR_FLAG_LEVEL1
             .dma_buf_count = DMA_BUFFER_COUNT,
             .dma_buf_len = DMA_BUFFER_LEN,
-        }, 0, NULL);
+        }, EVENT_QUEUE_ARGS);
         if (ret == ESP_OK)
             ret = i2s_set_dac_mode(RG_AUDIO_USE_INT_DAC);
         if (ret != ESP_OK)
@@ -88,7 +122,7 @@ static bool driver_init(int device, int sample_rate)
         #if CONFIG_IDF_TARGET_ESP32
             .use_apll = true, // External DAC may care about accuracy
         #endif
-        }, 0, NULL);
+        }, EVENT_QUEUE_ARGS);
         if (ret == ESP_OK)
         {
             ret = i2s_set_pin(I2S_NUM_0, &(i2s_pin_config_t) {
@@ -204,6 +238,9 @@ static bool driver_submit(const rg_audio_frame_t *frames, size_t count)
             pos = 0;
         }
     }
+#if defined(CONFIG_RG_AUDIO_I2S_EVENTS) && CONFIG_RG_AUDIO_I2S_EVENTS
+    drain_events();
+#endif
     return true;
 }
 
