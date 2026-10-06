@@ -127,18 +127,18 @@ menu "gpSP experiments"
             the crystal-fed systimer) once per overclock change. No effect at
             oc 0. Offline prototype: not yet measured on hardware.
     config GBSP_AUDIO_UNDERRUN_GUARD
-        bool "Audio sync transition guard (regime jump, sustained deficit)"
+        bool "Audio sync transition guard (one jump per new regime)"
         default n
         depends on GBSP_AUDIO_CLOCK_COMP
         help
-            On top of the median controller, once per 1s window: when two
-            consecutive windows agree on a new regime outside the hysteresis,
-            jump straight to it and restart the history (no walk through
-            intermediate rates); when three consecutive windows consume at
-            least 1% more than produced, step down once and require a margin
-            before coming back; after any DAC change, skip one window. The
-            deficit is the sample balance on the crystal clock, so no I2S
-            event queue is needed. Offline prototype: not yet measured.
+            On top of the median controller: when three consecutive 1s
+            windows each put the sustainable rate more than ~8% away from
+            the current one, on the same side and consistent with each
+            other, jump once to their median target and restart the history
+            from them, instead of noticing late and walking there in steps.
+            The window after any DAC change decides nothing. Windows are
+            timed on esp_timer (crystal). Does not use I2S events.
+            Offline prototype: not yet measured on hardware.
     config GBSP_AUDIO_PACING_STATS
         bool "Audio pacing statistics in the profile log (diagnostic only)"
         default n
