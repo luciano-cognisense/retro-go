@@ -336,12 +336,23 @@ static void audio_clock_sync(void)
 #define AUDIO_CLOCK_KHZ (-1)
 #endif
 
+#if defined(CONFIG_GBSP_AUDIO_UNDERRUN_GUARD) && CONFIG_GBSP_AUDIO_UNDERRUN_GUARD
+#define GBSP_AUDIO_UNDERRUN_GUARD 1
+#else
+#define GBSP_AUDIO_UNDERRUN_GUARD 0
+#endif
+#if GBSP_AUDIO_UNDERRUN_GUARD
+enum { AUDIO_WHY_NOMINAL, AUDIO_WHY_DEFICIT, AUDIO_WHY_HYSTERESIS, AUDIO_WHY_REGIME, AUDIO_WHY_COUNT };
+#endif
+
 #if GBSP_AUDIO_PACING_STATS
 // Diagnostic only: one line per profile window, nothing per frame. Consumption
 // and underruns come from the I2S driver's own events (CONFIG_RG_AUDIO_I2S_EVENTS):
 // one TX_DONE per DMA buffer played, and TX_Q_OVF when a buffer finished while
 // every other one was still free, i.e. the hardware went on to replay stale data.
+#if !GBSP_AUDIO_UNDERRUN_GUARD
 enum { AUDIO_WHY_NOMINAL, AUDIO_WHY_DEFICIT, AUDIO_WHY_HYSTERESIS, AUDIO_WHY_COUNT };
+#endif
 static struct
 {
     int64_t start;              // esp_timer, us
@@ -352,6 +363,9 @@ static struct
     int submitMax, submitSlow;  // longest submit (us), submits over 1ms
     int changes[AUDIO_WHY_COUNT];
     int ahead, behind;          // 1s audio windows above 102% / below 98% of realtime
+#if GBSP_AUDIO_UNDERRUN_GUARD
+    int draining;               // 1s windows the guard counted as draining (no change made)
+#endif
 } audioStats;
 
 static void audio_stats_reset(void)
@@ -380,9 +394,17 @@ static void audio_stats_frame(int samples, int64_t submitUs)
     audioStats.submitMax = RG_MAX(audioStats.submitMax, (int)submitUs);
     audioStats.submitSlow += submitUs > 1000;
 }
+#if GBSP_AUDIO_UNDERRUN_GUARD
+#define AUDIO_GUARD_STATS_FMT " regime %d | janelas_drenando %d"
+#define AUDIO_GUARD_STATS_ARG , audioStats.changes[AUDIO_WHY_REGIME], audioStats.draining
+#else
+#define AUDIO_GUARD_STATS_FMT ""
+#define AUDIO_GUARD_STATS_ARG
+#endif
 #define AUDIO_PACING_RESET() audio_stats_reset()
 #define AUDIO_PACING_FRAME(samples, us) audio_stats_frame(samples, us)
 #define AUDIO_PACING_CHANGE(why) (audioStats.changes[why]++)
+#define AUDIO_PACING_GUARD_WINDOW(d) (audioStats.draining += (d))
 // Throughput, not capability: whether the game actually ran ahead of or behind
 // realtime in that second. +-2% because the window is timed on the RTC, which
 // has disagreed with the crystal by up to ~1.2% per boot in the logs.
@@ -392,7 +414,143 @@ static void audio_stats_frame(int samples, int64_t submitUs)
 #define AUDIO_PACING_RESET() do { } while (0)
 #define AUDIO_PACING_FRAME(samples, us) do { } while (0)
 #define AUDIO_PACING_CHANGE(why) do { } while (0)
+#define AUDIO_PACING_GUARD_WINDOW(d) do { } while (0)
 #define AUDIO_PACING_WINDOW(cap) do { } while (0)
+#endif
+
+// Transition guard (CONFIG_GBSP_AUDIO_UNDERRUN_GUARD, needs the clock compensation).
+//
+// With the DAC clock right, what is left is the transitions. The console log of
+// the compensated build shows all three ways the median controller makes them
+// audible: it notices a new load late (the median of 8 needs most of 8 seconds
+// to move: 6-7s at 14-26% replay in the log), it then walks there in several
+// steps as the median catches up (25088 -> 28160 -> 31232 -> 32768, 3 steps over
+// ~20s), and every step restarts the I2S DMA, scrambling up to a ring's worth of
+// sound. Separately, a capability that settles 1-4% under the rate it is held at
+// never trips the hysteresis, and its replay never ends (the starve guard needs
+// a submit time of exactly zero, which never happens).
+//
+// So, on top of the median, once per window:
+//  - a regime check: when AUDIO_GUARD_CONFIRM consecutive windows agree on a
+//    target outside the hysteresis, in the same direction and within the
+//    hysteresis of each other, jump straight to the most conservative of them
+//    and restart the history from those windows -- one step, no walk. A single
+//    window (a ROM stall, a short burst) never moves anything;
+//  - a deficit check: when AUDIO_GUARD_DEFICIT_WINDOWS consecutive windows each
+//    consumed at least AUDIO_GUARD_DEFICIT_PERMILLE more than was produced, step
+//    down once (the history's target, or one 512Hz notch). The rate given up is
+//    remembered, and coming back to it needs a clear margin, so a capability
+//    sitting on the boundary does not flip between two notches;
+//  - after any change, AUDIO_GUARD_COOLDOWN windows that decide nothing: the
+//    restart itself costs a partial buffer and a reshuffled ring.
+// The deficit is the sample balance -- the rate is now known (that is what the
+// compensation fixed) and the window is timed on esp_timer, i.e. the crystal the
+// DAC runs from -- so production needs no I2S event queue. Checked against the
+// driver's TX_Q_OVF counts in the console log: same replay, window by window.
+// AUDIO_GUARD_SOURCE_EVENTS=1 uses the events instead (diagnostic builds only).
+#if GBSP_AUDIO_UNDERRUN_GUARD
+#ifndef AUDIO_GUARD_CONFIRM
+#define AUDIO_GUARD_CONFIRM 2       // windows to confirm a heavier regime (rate down: replay meanwhile)
+#endif
+#ifndef AUDIO_GUARD_CONFIRM_UP
+#define AUDIO_GUARD_CONFIRM_UP 3    // windows to confirm a lighter one (rate up: only blocking meanwhile)
+#endif
+#ifndef AUDIO_GUARD_DEFICIT_PERMILLE
+#define AUDIO_GUARD_DEFICIT_PERMILLE 10
+#endif
+#ifndef AUDIO_GUARD_DEFICIT_WINDOWS
+#define AUDIO_GUARD_DEFICIT_WINDOWS 3
+#endif
+#ifndef AUDIO_GUARD_COOLDOWN
+#define AUDIO_GUARD_COOLDOWN 1
+#endif
+#ifndef AUDIO_GUARD_JUMP
+#define AUDIO_GUARD_JUMP 1
+#endif
+#ifndef AUDIO_GUARD_JUMP_MEDIAN
+#define AUDIO_GUARD_JUMP_MEDIAN 0   // jump target: 0 = lowest of the agreeing windows, 1 = their median
+#endif
+#ifndef AUDIO_GUARD_SETTLE
+#define AUDIO_GUARD_SETTLE 0        // history length before the plain median rules may move again
+#endif
+#ifndef AUDIO_GUARD_REGIME_DIV
+#define AUDIO_GUARD_REGIME_DIV 16   // a regime window differs from the rate by more than 1/N
+#endif
+#ifndef AUDIO_GUARD_FAST_DOWN
+#define AUDIO_GUARD_FAST_DOWN 0     // >0: a drop of more than 1/N confirmed by AUDIO_GUARD_FAST_CONFIRM windows
+#endif
+#ifndef AUDIO_GUARD_FAST_CONFIRM
+#define AUDIO_GUARD_FAST_CONFIRM 2
+#endif
+#ifndef AUDIO_GUARD_SOURCE_EVENTS
+#define AUDIO_GUARD_SOURCE_EVENTS 0
+#endif
+#if AUDIO_GUARD_CONFIRM < 1 || AUDIO_GUARD_CONFIRM_UP < 1 || AUDIO_GUARD_CONFIRM > AUDIO_SYNC_HISTORY || AUDIO_GUARD_CONFIRM_UP > AUDIO_SYNC_HISTORY
+#error "AUDIO_GUARD_CONFIRM and AUDIO_GUARD_CONFIRM_UP must be 1..AUDIO_SYNC_HISTORY"
+#endif
+#define AUDIO_GUARD_CAPS RG_MAX(AUDIO_GUARD_CONFIRM, AUDIO_GUARD_CONFIRM_UP)
+#ifdef RG_AUDIO_DMA_BUFFER_COUNT
+#define AUDIO_GUARD_RING (RG_AUDIO_DMA_BUFFER_COUNT * 180) // what the DMA ring holds (16 x 180 here)
+#else
+#define AUDIO_GUARD_RING (4 * 180)                          // the driver's default ring
+#endif
+
+static struct
+{
+    int cooldown;              // windows left that decide nothing
+    int regimeCount, regimeDir; // consecutive windows agreeing on a new regime
+    int regimeLow, regimeHigh; // their lowest and highest targets
+    int fastCount;             // consecutive windows more than 1/AUDIO_GUARD_FAST_DOWN under the rate
+    int regimeCaps[AUDIO_GUARD_CAPS]; // and their capabilities, newest last
+    int deficitCount;          // consecutive draining windows
+    int64_t ring;              // estimated samples in the DMA ring at the window start
+    int ceiling;               // rate given up for a deficit; 0 = none
+#if AUDIO_GUARD_SOURCE_EVENTS
+    uint32_t done0, overflow0; // driver counters at the window start
+    int bufferLen;
+#endif
+} audioGuard;
+
+// The controller's target for one capability: margin under nominal, 512Hz notch.
+static int audio_guard_target(int cap)
+{
+    int target = cap;
+    if (cap < AUDIO_SAMPLE_RATE)
+        target -= target >> 6;
+    target = (target + 256) & ~511;
+    return RG_MIN(RG_MAX(target, AUDIO_SYNC_MIN_RATE), AUDIO_SAMPLE_RATE);
+}
+
+static void audio_guard_window(void)
+{
+#if AUDIO_GUARD_SOURCE_EVENTS
+    audioGuard.bufferLen = rg_audio_i2s_get_events(&audioGuard.done0, &audioGuard.overflow0);
+#endif
+}
+
+// Forget everything measured under the previous rate or configuration: after a
+// DAC change, a menu, an overclock or a reset. Events still queued from before
+// are drained into the new baseline by audio_guard_window(), so they cannot
+// count against the new rate.
+static void audio_guard_rearm(int cooldown)
+{
+    audioGuard.cooldown = cooldown;
+    audioGuard.regimeCount = 0;
+    audioGuard.regimeDir = 0;
+    audioGuard.fastCount = 0;
+    audioGuard.deficitCount = 0;
+    audio_guard_window();
+}
+
+static void audio_guard_reset(void)
+{
+    audio_guard_rearm(0);
+    audioGuard.ceiling = 0;
+    audioGuard.ring = 0; // after a menu the ring is silence: nothing to draw on
+}
+#define AUDIO_SYNC_NOW() rg_system_timer()
+#else
+#define AUDIO_SYNC_NOW() (int64_t)esp_rtc_get_time_us()
 #endif
 
 // Start a fresh measuring window, keeping the history. Called whenever real time
@@ -403,7 +561,14 @@ static void audio_sync_window(void)
     // RTC rather than rg_system_timer(), for the same reason the profile uses
     // it: esp_timer follows the PLL, so under overclock it could read the window
     // short and we would tune the DAC to a speed we are not actually running at.
+#if GBSP_AUDIO_UNDERRUN_GUARD
+    // The guard needs the window on the DAC's own clock (see above); on the S3
+    // esp_timer is the crystal and does not move with the overclock either.
+    audioWindowStart = AUDIO_SYNC_NOW();
+    audio_guard_window();
+#else
     audioWindowStart = (int64_t)esp_rtc_get_time_us();
+#endif
     audioWindowFrames = 0;
     audioWindowBlocked = 0;
 }
@@ -413,6 +578,9 @@ static void audio_sync_reset(void)
     audioHistoryLen = 0;
     audioHistoryPos = 0;
     audioStarving = 0;
+#if GBSP_AUDIO_UNDERRUN_GUARD
+    audio_guard_reset();
+#endif
     audio_sync_window();
 }
 
@@ -433,13 +601,23 @@ static int audio_sync_median(void)
 
 static void audio_sync_update(void)
 {
+#if GBSP_AUDIO_UNDERRUN_GUARD
+    const int64_t elapsed = AUDIO_SYNC_NOW() - audioWindowStart;
+#else
     const int64_t elapsed = (int64_t)esp_rtc_get_time_us() - audioWindowStart;
+#endif
     if (elapsed < AUDIO_SYNC_WINDOW_US)
         return;
 
     const int64_t frames = audioWindowFrames;
     // Clamped so a pathological window can never make the divisor vanish.
     const int64_t blocked = RG_MIN(audioWindowBlocked, elapsed / 2);
+#if GBSP_AUDIO_UNDERRUN_GUARD && AUDIO_GUARD_SOURCE_EVENTS
+    uint32_t guardDone, guardOverflow;
+    rg_audio_i2s_get_events(&guardDone, &guardOverflow);
+    const int64_t guardPlayed = (int64_t)(uint32_t)(guardDone - audioGuard.done0) * audioGuard.bufferLen;
+    const int64_t guardStale = (int64_t)(uint32_t)(guardOverflow - audioGuard.overflow0) * audioGuard.bufferLen;
+#endif
     audio_sync_window();
 
     // Capability, not throughput. Time spent blocked in rg_audio_submit() is
@@ -470,6 +648,145 @@ static void audio_sync_update(void)
     target = (target + 256) & ~511; // no point chasing single hertz
     target = RG_MIN(RG_MAX(target, AUDIO_SYNC_MIN_RATE), AUDIO_SAMPLE_RATE);
 
+#if GBSP_AUDIO_UNDERRUN_GUARD
+    const int64_t consumed = (int64_t)audioRate * elapsed / 1000000;
+#if AUDIO_GUARD_SOURCE_EVENTS
+    // The driver dropped events if fewer buffers were reported played than the
+    // rate says (its queue was full): that window says nothing either way.
+    const bool known = guardPlayed * 100 >= consumed * 98;
+    const bool draining = known && guardStale * 1000 >= consumed * AUDIO_GUARD_DEFICIT_PERMILLE;
+#else
+    // Replay estimated from the sample balance through a model of the ring: a
+    // window only replays what the ring could not cover, and any real wait in
+    // submit (well over the ~0.1ms a submit costs) means the ring was full.
+    const int64_t shortfall = consumed - frames - audioGuard.ring;
+    const bool known = true;
+    const bool draining = shortfall * 1000 >= consumed * AUDIO_GUARD_DEFICIT_PERMILLE;
+    audioGuard.ring = RG_MIN(RG_MAX(audioGuard.ring + frames - consumed, 0), AUDIO_GUARD_RING);
+    if (blocked - frames * 150 / 549 > 2000)
+        audioGuard.ring = AUDIO_GUARD_RING;
+#endif
+
+    int move = 0, why = AUDIO_WHY_HYSTERESIS;
+    if (audioGuard.cooldown > 0)
+    {
+        audioGuard.cooldown--; // the window after a change: restart artifacts, decide nothing
+    }
+    else
+    {
+        // Regime: this window's own target, against the rate and the windows before it.
+        const int wt = audio_guard_target(audioCapability);
+        const int dir = (wt - audioRate) * AUDIO_GUARD_REGIME_DIV > audioRate ? 1
+                      : (audioRate - wt) * AUDIO_GUARD_REGIME_DIV > audioRate ? -1 : 0;
+        const int low = RG_MIN(wt, audioGuard.regimeLow), high = RG_MAX(wt, audioGuard.regimeHigh);
+        if (dir != 0 && dir == audioGuard.regimeDir && (high - low) * 16 <= high)
+        {
+            audioGuard.regimeCount++;
+            audioGuard.regimeLow = low;
+            audioGuard.regimeHigh = high;
+        }
+        else
+        {
+            audioGuard.regimeCount = dir != 0;
+            audioGuard.regimeDir = dir;
+            audioGuard.regimeLow = audioGuard.regimeHigh = wt;
+        }
+        for (int i = 0; i + 1 < AUDIO_GUARD_CAPS; i++)
+            audioGuard.regimeCaps[i] = audioGuard.regimeCaps[i + 1];
+        audioGuard.regimeCaps[AUDIO_GUARD_CAPS - 1] = audioCapability;
+        int confirm = audioGuard.regimeDir > 0 ? AUDIO_GUARD_CONFIRM_UP : AUDIO_GUARD_CONFIRM;
+#if AUDIO_GUARD_FAST_DOWN > 0
+        // A big drop -- the game now far below the rate, the ring certainly dry --
+        // needs fewer windows: noise does not reach that far twice in a row.
+        audioGuard.fastCount = (audioRate - wt) * AUDIO_GUARD_FAST_DOWN > audioRate ? audioGuard.fastCount + 1 : 0;
+        if (audioGuard.regimeDir < 0 && audioGuard.fastCount >= AUDIO_GUARD_FAST_CONFIRM && audioGuard.regimeCount >= AUDIO_GUARD_FAST_CONFIRM)
+            confirm = RG_MIN(confirm, AUDIO_GUARD_FAST_CONFIRM);
+#endif
+
+        if (known)
+            audioGuard.deficitCount = draining ? audioGuard.deficitCount + 1 : 0;
+
+        // Coming back up to a rate given up for a deficit needs a clear margin.
+        const int ceilingOk = !audioGuard.ceiling || audioGuard.regimeLow * 32 >= audioGuard.ceiling * 33;
+
+        if (AUDIO_GUARD_JUMP && audioGuard.regimeCount >= confirm
+            && (audioGuard.regimeDir < 0 || audioGuard.regimeLow < audioGuard.ceiling || ceilingOk))
+        {
+            // One step to the most conservative target of the agreeing windows,
+            // and a history made of them, so the median starts in the new regime.
+            target = audioGuard.regimeLow;
+            if (AUDIO_GUARD_JUMP_MEDIAN)
+            {
+                int t[AUDIO_GUARD_CAPS], n = confirm;
+                for (int i = 0; i < n; i++)
+                {
+                    int v = audio_guard_target(audioGuard.regimeCaps[AUDIO_GUARD_CAPS - n + i]), j;
+                    for (j = i - 1; j >= 0 && t[j] > v; --j)
+                        t[j + 1] = t[j];
+                    t[j + 1] = v;
+                }
+                target = t[(n - 1) / 2];
+            }
+            if (audioGuard.regimeDir > 0 && !ceilingOk)
+                target = RG_MIN(target, audioGuard.ceiling - 512);
+            move = target != audioRate;
+            why = AUDIO_WHY_REGIME;
+            if (move)
+            {
+                for (int i = 0; i < confirm; i++)
+                    audioHistory[i] = audioGuard.regimeCaps[AUDIO_GUARD_CAPS - confirm + i];
+                audioHistoryLen = confirm;
+                audioHistoryPos = confirm % AUDIO_SYNC_HISTORY;
+                if (audioGuard.regimeDir > 0 && ceilingOk)
+                    audioGuard.ceiling = 0;
+            }
+        }
+        else if (audioGuard.deficitCount >= AUDIO_GUARD_DEFICIT_WINDOWS && target < audioRate)
+        {
+            // Sustained deficit inside the hysteresis, and the history agrees the
+            // rate is above what the game sustains: go to the history's target.
+            // Windows that merely dip under a rate the median still supports are
+            // noise the ring is there to absorb, and are left alone.
+            move = 1;
+            why = AUDIO_WHY_DEFICIT;
+            audioGuard.ceiling = audioRate;
+        }
+        else if (audioHistoryLen < AUDIO_GUARD_SETTLE)
+        {
+            // A history restarted by a jump is too short to second-guess it yet.
+        }
+        else if (target == AUDIO_SAMPLE_RATE)
+        {
+            move = audioRate != AUDIO_SAMPLE_RATE && (audioGuard.ceiling != AUDIO_SAMPLE_RATE
+                   || median * 32 >= AUDIO_SAMPLE_RATE * 33);
+            why = AUDIO_WHY_NOMINAL;
+            if (move)
+                audioGuard.ceiling = 0;
+        }
+        else
+        {
+            move = abs(target - audioRate) * 16 > audioRate
+                   && (target < audioRate || !audioGuard.ceiling || target < audioGuard.ceiling
+                       || median * 32 >= audioGuard.ceiling * 33);
+        }
+    }
+
+    if (move)
+    {
+        AUDIO_PACING_CHANGE(why);
+        audioRate = target;
+        audioStarving = 0;
+        profile.audioRateChanges++;
+        audio_dac_set(audioRate);
+        audio_guard_rearm(AUDIO_GUARD_COOLDOWN);
+    }
+    else
+    {
+        AUDIO_PACING_GUARD_WINDOW(draining);
+    }
+    (void)why;
+}
+#else
     // Draining, or merely throttled? See the note above the declarations.
     const int64_t consumed = (int64_t)audioRate * elapsed / 1000000;
     if (blocked == 0 && frames < consumed)
@@ -500,6 +817,7 @@ static void audio_sync_update(void)
         audio_dac_set(audioRate);
     }
 }
+#endif
 
 void netpacket_poll_receive()
 {
@@ -664,14 +982,14 @@ static void profile_flush(void)
         const bool any = audioStats.produced > 0 && us > 0;
         fprintf(fp, "ritmo_audio %d ms | cpu %d kHz | dac pedido %dHz programado %dHz | consumo_real %dHz | produzido %dHz"
                     " | repetidos %u de %u buffers | envio max %d us, >1ms %d | ocupacao_est min %d max %d"
-                    " | trocas nominal %d deficit %d histerese %d | janelas_1s acima %d abaixo %d\n",
+                    " | trocas nominal %d deficit %d histerese %d" AUDIO_GUARD_STATS_FMT " | janelas_1s acima %d abaixo %d\n",
                 (int)(us / 1000), AUDIO_CLOCK_KHZ, audioRate, rg_audio_get_sample_rate(),
                 any ? (int)(played * 1000000 / us) : 0, any ? (int)(audioStats.produced * 1000000 / us) : 0,
                 (unsigned)(overflow - audioStats.overflow0), (unsigned)(done - audioStats.done0),
                 audioStats.submitMax, audioStats.submitSlow,
                 any ? (int)audioStats.occMin : -1, any ? (int)audioStats.occMax : -1,
                 audioStats.changes[AUDIO_WHY_NOMINAL], audioStats.changes[AUDIO_WHY_DEFICIT],
-                audioStats.changes[AUDIO_WHY_HYSTERESIS], audioStats.ahead, audioStats.behind);
+                audioStats.changes[AUDIO_WHY_HYSTERESIS] AUDIO_GUARD_STATS_ARG, audioStats.ahead, audioStats.behind);
     }
 #endif
 #if GBSP_RENDER_ASYNC_STATS
