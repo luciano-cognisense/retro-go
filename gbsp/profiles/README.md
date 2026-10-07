@@ -53,3 +53,39 @@ All four options keep `default n`; only this profile turns them on. Cheats
 are unavailable, as in v1. Measured against the cache64 profile on the target
 hardware: Mario emu -10.90% / total -9.78%; Pokémon Fire Red neutral (emu
 +0.48%, total +0.04%); 108 KB internal RAM free at boot, largest block 48 KB.
+
+## performance-v3
+
+```sh
+gbsp/profiles/build-performance-v3.sh
+```
+
+Same mechanism and checks as v2. The profile is v2 plus one option:
+
+- `CONFIG_GBSP_AUDIO_CLOCK_COMP` (ESP32-S3 only): on the S3 the I2S clock
+  is BBPLL/3 and the retro-go overclock raises the BBPLL, so without this
+  option a programmed 32768 Hz plays ~38230 samples/s at oc 2. With it,
+  audio sync programs its rate scaled by nominal/actual CPU clock, measured
+  once per overclock change on the way out of the menu (CCOUNT against the
+  crystal-fed `esp_timer`). Nothing changes at oc 0, an implausible
+  measurement falls back to the uncompensated rate, and it applies with Audio
+  sync on and off. No per-frame work.
+
+Everything in v2 stays as it was: render on core 1 (hybrid, adaptive),
+FAST_RAM_WRITES, CPSR consumer sync + lazy dispatch, FETCH_PC,
+NO_CHEAT_HOOK, CPU_RODATA_DRAM, 64 KB data cache, PSRAM 80 MHz.
+
+- Overclock and frameskip remain configurable in the menus.
+- **Cheats are unavailable**, as in v1 and v2 (NO_CHEAT_HOOK).
+- Not part of this firmware: the audio pacing statistics, the I2S event
+  counting and the transition guard explored afterwards. Those options do not
+  exist in this tree.
+- Measured on the target hardware at oc 2 (with the statistics build of the
+  same code): 32768 Hz requested -> 28087 programmed, ~32768 samples/s
+  actually consumed; at most 60 fps sustained (61-69 fps before); audio judged
+  more natural.
+- Scenes that run below 100% still slow the sound down with them, and when the
+  load changes the rate can take a few seconds to settle; the compensation does
+  not remove those artifacts.
+
+The option keeps `default n`; only this profile turns it on.
