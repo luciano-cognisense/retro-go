@@ -1535,6 +1535,15 @@ IRAM_ATTR void execute_arm(u32 cycles)
     do
     {
 arm_loop:
+#ifdef CONFIG_GBSP_CPU_ALERT_PER_INSTRUCTION
+       /* cpu_alert only matters to the test at the end of this instruction:
+        * everything that sets HALT/IRQ reaches that test in the same
+        * instruction (no handler that assigns it jumps straight back to a
+        * loop head). Starting each instruction at NONE lets the compiler
+        * drop the test, and the stack slot, wherever a handler cannot set it.
+        * See CONFIG_GBSP_CPU_ALERT_PER_INSTRUCTION. */
+       cpu_alert = CPU_ALERT_NONE;
+#endif
 
        collapse_flags_dispatch();
 
@@ -3110,6 +3119,15 @@ skip_instruction:
     do
     {
 thumb_loop:
+#ifdef CONFIG_GBSP_CPU_ALERT_PER_INSTRUCTION
+       /* cpu_alert only matters to the test at the end of this instruction:
+        * everything that sets HALT/IRQ reaches that test in the same
+        * instruction (no handler that assigns it jumps straight back to a
+        * loop head). Starting each instruction at NONE lets the compiler
+        * drop the test, and the stack slot, wherever a handler cannot set it.
+        * See CONFIG_GBSP_CPU_ALERT_PER_INSTRUCTION. */
+       cpu_alert = CPU_ALERT_NONE;
+#endif
 
        collapse_flags_dispatch();
 

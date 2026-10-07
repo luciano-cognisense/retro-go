@@ -113,6 +113,18 @@ menu "gpSP experiments"
         default n
         help
             Adds a render_core1 line to the profile log. Diagnostic only.
+    config GBSP_CPU_ALERT_PER_INSTRUCTION
+        bool "Reset cpu_alert at the start of every interpreted instruction"
+        default n
+        help
+            execute_arm() keeps cpu_alert alive across instructions, so the
+            compiler holds it in a stack slot and reloads it for the HALT/IRQ
+            test at the end of every instruction. Only the instruction that
+            set it can make that test fire (no handler that sets it jumps back
+            to a loop head without the test), so resetting it at each ARM and
+            Thumb loop head is equivalent and lets the compiler drop the test
+            and the slot on every path that cannot set it. Offline candidate:
+            object-level savings, not measured on hardware.
     config GBSP_AUDIO_CLOCK_COMP
         bool "Compensate the I2S clock for the retro-go overclock (ESP32-S3)"
         default n
