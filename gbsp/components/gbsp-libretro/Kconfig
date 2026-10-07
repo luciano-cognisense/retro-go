@@ -113,4 +113,18 @@ menu "gpSP experiments"
         default n
         help
             Adds a render_core1 line to the profile log. Diagnostic only.
+    config GBSP_AUDIO_CLOCK_COMP
+        bool "Compensate the I2S clock for the retro-go overclock (ESP32-S3)"
+        default n
+        depends on IDF_TARGET_ESP32S3
+        help
+            The S3 I2S clock is PLL_F160M = BBPLL/3 and rg_system_set_overclock()
+            raises the BBPLL, so under overclock the DAC consumes more samples
+            than programmed (x280/240 at oc 2): emulation was held back only
+            above ~117% and below that the ring underran. With this option the
+            audio sync rate is the rate the DAC really consumes; the programmed
+            rate is scaled by nominal/actual CPU clock, measured (CCOUNT against
+            the crystal-fed systimer) once per overclock change. No effect at
+            oc 0. Measured on hardware (oc 2): 32768Hz requested -> 28087Hz
+            programmed, ~32768 samples/s consumed, at most 60fps sustained.
 endmenu
