@@ -123,8 +123,10 @@ menu "gpSP experiments"
             set it can make that test fire (no handler that sets it jumps back
             to a loop head without the test), so resetting it at each ARM and
             Thumb loop head is equivalent and lets the compiler drop the test
-            and the slot on every path that cannot set it. Offline candidate:
-            object-level savings, not measured on hardware.
+            and the slot on every path that cannot set it. Measured on the
+            target hardware with performance profile v4 (frame 112 -> 96 B,
+            IRAM -1924 B; emu time lower in both games tested). Enabled only
+            by that profile.
     config GBSP_AUDIO_CLOCK_COMP
         bool "Compensate the I2S clock for the retro-go overclock (ESP32-S3)"
         default n
