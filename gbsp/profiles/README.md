@@ -89,3 +89,32 @@ NO_CHEAT_HOOK, CPU_RODATA_DRAM, 64 KB data cache, PSRAM 80 MHz.
   not remove those artifacts.
 
 The option keeps `default n`; only this profile turns it on.
+
+## performance-v4
+
+```sh
+gbsp/profiles/build-performance-v4.sh
+```
+
+Same mechanism and checks as v3. The profile is v3 plus one option:
+
+- `CONFIG_GBSP_CPU_ALERT_PER_INSTRUCTION`: `execute_arm()` resets
+  `cpu_alert` at the start of every interpreted ARM and Thumb instruction.
+  Only the instruction that sets HALT/IRQ can make the end-of-instruction
+  test fire, so this is equivalent, and it lets the compiler drop the
+  `cpu_alert` stack slot and that test wherever a handler cannot set it.
+  In the measured build: `execute_arm` frame 112 -> 96 B, IRAM -1924 B.
+
+Everything in v3 stays as it was: I2S clock compensation, render on core 1
+(hybrid, adaptive), FAST_RAM_WRITES, CPSR consumer sync + lazy dispatch,
+FETCH_PC, NO_CHEAT_HOOK, CPU_RODATA_DRAM, 64 KB data cache, PSRAM 80 MHz.
+
+- Overclock and frameskip remain configurable in the menus.
+- **Cheats are unavailable**, as in v1-v3 (NO_CHEAT_HOOK).
+- Measured on the target hardware (Mario and Pokémon Fire Red, oc 0,
+  frameskip 0): emu time went down in both games and nothing regressed
+  functionally (boot, play, save/load). There is no official percentage:
+  the moving scenes of the two runs were similar but not identical.
+- 110 KB internal RAM free at boot, largest block 50 KB (108/48 KB before).
+
+The option keeps `default n`; only this profile turns it on.
