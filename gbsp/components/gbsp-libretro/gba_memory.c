@@ -2490,6 +2490,11 @@ bool memory_read_savestate(const u8 *src)
 
   rtc_data = rtc_data_array[0] | (((u64)rtc_data_array[1]) << 32);
 
+  /* WAITCNT came back with the other IO registers; rebuild the waitstate
+   * tables from it, as a write to WAITCNT does. Without this the tables kept
+   * the values from before the load. */
+  reload_timing_info();
+
   return true;
 }
 
