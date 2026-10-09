@@ -118,3 +118,15 @@ FETCH_PC, NO_CHEAT_HOOK, CPU_RODATA_DRAM, 64 KB data cache, PSRAM 80 MHz.
 - 110 KB internal RAM free at boot, largest block 50 KB (108/48 KB before).
 
 The option keeps `default n`; only this profile turns it on.
+
+## performance-v4.1
+
+```sh
+gbsp/profiles/build-performance-v4.1.sh
+```
+
+Maintenance release of v4 with the same effective sdkconfig and performance
+options. It adds the functional savestate fix that rebuilds
+`ws_cyc_seq`/`ws_cyc_nseq` from the restored `WAITCNT` after loading a state.
+The savestate format is unchanged, and normal execution outside load state is
+identical to v4. Performance is therefore expected to be identical to v4.
