@@ -379,6 +379,21 @@ u32 gamepak_sticky_bit[1024/32];
 #define gamepak_sb_test(idx) \
  (gamepak_sticky_bit[((unsigned)(idx)) >> 5] & (1 << (((unsigned)(idx)) & 31)))
 
+#ifdef CONFIG_GBSP_ROM_SECOND_CHANCE
+// Reference bit: the sticky bits of every frame accumulated (once per frame, in
+// clear_gamepak_stickybits()) until the page gets its second chance.
+u32 gamepak_ref_bit[1024/32];
+
+// Clears the reference bit and returns whether it was set.
+static inline u32 gamepak_rb_take(unsigned idx)
+{
+  u32 mask = 1u << (idx & 31);
+  u32 set = gamepak_ref_bit[idx >> 5] & mask;
+  gamepak_ref_bit[idx >> 5] &= ~mask;
+  return set;
+}
+#endif
+
 // This is global so that it can be kept open for large ROMs to swap
 // pages from, so there's no slowdown with opening and closing the file
 // a lot.
@@ -2214,7 +2229,14 @@ static u32 evict_gamepak_page(void)
     gamepak_blk_queue[gamepak_lru_tail].next_lru = ret;
     gamepak_lru_tail = ret;
     // If this page is marked as sticky, we keep going through the list
+#ifdef CONFIG_GBSP_ROM_SECOND_CHANCE
+    // A non-sticky page that ran code since its last pass goes to the tail
+    // once more. Every pass clears a bit, so this ends within two laps unless
+    // every entry is sticky (the same case as without the option).
+  } while (phyrom >= 0 && (gamepak_sb_test(phyrom) || gamepak_rb_take(phyrom)));
+#else
   } while (phyrom >= 0 && gamepak_sb_test(phyrom));
+#endif
 
   // We unmap the ROM page if it was mapped, ensure we do not access it
   // without triggering a "page fault"
@@ -2286,6 +2308,9 @@ void init_gamepak_buffer(void)
 
   gamepak_lru_head = 0;
   gamepak_lru_tail = 32 * gamepak_buffer_count - 1;
+#ifdef CONFIG_GBSP_ROM_SECOND_CHANCE
+  memset(gamepak_ref_bit, 0, sizeof(gamepak_ref_bit));
+#endif
 }
 
 bool gamepak_must_swap(void)
@@ -2587,6 +2612,14 @@ static s32 load_gamepak_raw(const char *name)
 
     // Unmap the ROM space since we will re-map it now
     map_null(read, 0x8000000, 0xD000000);
+#ifdef CONFIG_GBSP_ROM_SECOND_CHANCE
+    // No reference bit of a previous game survives into this one. Its last
+    // sticky bits go too: the first clear_gamepak_stickybits() of this game
+    // would otherwise accumulate them. No code runs before that clear, so the
+    // sticky protection itself is unchanged.
+    memset(gamepak_ref_bit, 0, sizeof(gamepak_ref_bit));
+    memset(gamepak_sticky_bit, 0, sizeof(gamepak_sticky_bit));
+#endif
 
     // Proceed to read the whole ROM or as much as possible.
     for (i = 0; i < ldblks; i++)

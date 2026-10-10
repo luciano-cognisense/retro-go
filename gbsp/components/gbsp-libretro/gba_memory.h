@@ -329,6 +329,9 @@ extern u8 gamepak_backup[1024 * 128];
 
 // Page sticky bit routines
 extern u32 gamepak_sticky_bit[1024/32];
+#ifdef CONFIG_GBSP_ROM_SECOND_CHANCE
+extern u32 gamepak_ref_bit[1024/32];
+#endif
 static inline void touch_gamepak_page(u32 physical_index)
 {
   u32 idx = (physical_index >> 5) & 31;
@@ -339,6 +342,13 @@ static inline void touch_gamepak_page(u32 physical_index)
 
 static inline void clear_gamepak_stickybits(void)
 {
+#ifdef CONFIG_GBSP_ROM_SECOND_CHANCE
+  // The pages that ran code this frame keep a reference bit until
+  // evict_gamepak_page() passes over them (second chance).
+  unsigned i;
+  for (i = 0; i < 1024/32; i++)
+    gamepak_ref_bit[i] |= gamepak_sticky_bit[i];
+#endif
   memset(gamepak_sticky_bit, 0, sizeof(gamepak_sticky_bit));
 }
 

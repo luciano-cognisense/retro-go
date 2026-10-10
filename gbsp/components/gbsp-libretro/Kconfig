@@ -141,6 +141,20 @@ menu "gpSP experiments"
             unchanged. Measured on the target hardware with performance
             profile v5 (IRAM +588 B, same frame; on a still scene Fire Red
             emu about -1%, Mario neutral). Enabled only by that profile.
+    config GBSP_ROM_SECOND_CHANCE
+        bool "Give recently executed ROM pages a second chance in the page cache"
+        default n
+        help
+            The ROM page cache (gba_memory.c) is a circular FIFO that skips the
+            pages marked sticky in the current frame: a hit does not reorder
+            anything, so the most used code page is evicted in its turn when it
+            did not run in that frame. With this option the sticky bits are ORed
+            into a persistent reference bitmap (128 B) once per frame, before
+            they are cleared; evict_gamepak_page() then sends a non-sticky page
+            with its reference bit to the tail once, clearing the bit. The hit
+            path and touch_gamepak_page() are unchanged. Replayed on host traces
+            of Fire Red (6 MB cache): page faults and bytes read -45%, worst
+            60-frame burst 18 -> 10 faults. Not measured on hardware yet.
     config GBSP_AUDIO_CLOCK_COMP
         bool "Compensate the I2S clock for the retro-go overclock (ESP32-S3)"
         default n
