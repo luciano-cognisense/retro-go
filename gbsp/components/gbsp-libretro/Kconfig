@@ -138,8 +138,9 @@ menu "gpSP experiments"
             register indices are 0-7, so only explicit PC writes and the block
             transfer helpers change the PC; the copy is reloaded after those
             helpers and on every jump into the loop. The ARM loop is
-            unchanged. Offline candidate: object-level savings, not measured
-            on hardware.
+            unchanged. Measured on the target hardware with performance
+            profile v5 (IRAM +588 B, same frame; on a still scene Fire Red
+            emu about -1%, Mario neutral). Enabled only by that profile.
     config GBSP_AUDIO_CLOCK_COMP
         bool "Compensate the I2S clock for the retro-go overclock (ESP32-S3)"
         default n
