@@ -154,7 +154,11 @@ menu "gpSP experiments"
             with its reference bit to the tail once, clearing the bit. The hit
             path and touch_gamepak_page() are unchanged. Replayed on host traces
             of Fire Red (6 MB cache): page faults and bytes read -45%, worst
-            60-frame burst 18 -> 10 faults. Not measured on hardware yet.
+            60-frame burst 18 -> 10 faults. Measured on the target hardware
+            with performance profile v6 (oc 0, frameskip 0, Fire Red): page
+            faults and ROM read time -40%, cost per fault unchanged (~58 ms);
+            Mario fits the cache and has no faults. BSS +128 B, flash +88 B,
+            IRAM unchanged. Enabled only by that profile.
     config GBSP_AUDIO_CLOCK_COMP
         bool "Compensate the I2S clock for the retro-go overclock (ESP32-S3)"
         default n
