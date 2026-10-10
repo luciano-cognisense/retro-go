@@ -130,3 +130,29 @@ options. It adds the functional savestate fix that rebuilds
 `ws_cyc_seq`/`ws_cyc_nseq` from the restored `WAITCNT` after loading a state.
 The savestate format is unchanged, and normal execution outside load state is
 identical to v4. Performance is therefore expected to be identical to v4.
+
+## performance-v5
+
+```sh
+gbsp/profiles/build-performance-v5.sh
+```
+
+Same mechanism and checks as v4.1. The profile is v4.1 plus one option:
+
+- `CONFIG_GBSP_THUMB_RESIDENT_PC`: in the Thumb loop of `execute_arm()` the
+  PC stays in a register from one instruction to the next. Every PC write
+  still goes to `reg[REG_PC]` (helpers and `Rs = PC` read it there), so only
+  the two PC loads per Thumb instruction go away; the copy is reloaded on
+  every jump into the loop and after the block transfer helpers. The ARM
+  loop is unchanged. In the measured build: IRAM +588 B, same `execute_arm`
+  frame (96 B), no new stack spill.
+
+Everything in v4.1 stays as it was, including the savestate waitstate fix.
+
+- Overclock and frameskip remain configurable in the menus.
+- **Cheats are unavailable**, as in v1-v4.1 (NO_CHEAT_HOOK).
+- Measured on the target hardware on still scenes (oc 0, frameskip 0):
+  Pokémon Fire Red emu -1.0%, CPU-side time -1.3%, total -1.0%; Mario emu
+  neutral, CPU-side time -0.5%. Save/load and play worked in both games.
+
+The option keeps `default n`; only this profile turns it on.
