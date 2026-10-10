@@ -127,6 +127,19 @@ menu "gpSP experiments"
             target hardware with performance profile v4 (frame 112 -> 96 B,
             IRAM -1924 B; emu time lower in both games tested). Enabled only
             by that profile.
+    config GBSP_THUMB_RESIDENT_PC
+        bool "Keep the Thumb PC in a register across instructions"
+        default n
+        help
+            In the Thumb loop of execute_arm() the PC is kept in a local
+            variable that stays in a register from one instruction to the
+            next. reg[REG_PC] is still written on every PC change (helpers and
+            Rs = PC read it there), so only the PC loads go away. Thumb
+            register indices are 0-7, so only explicit PC writes and the block
+            transfer helpers change the PC; the copy is reloaded after those
+            helpers and on every jump into the loop. The ARM loop is
+            unchanged. Offline candidate: object-level savings, not measured
+            on hardware.
     config GBSP_AUDIO_CLOCK_COMP
         bool "Compensate the I2S clock for the retro-go overclock (ESP32-S3)"
         default n

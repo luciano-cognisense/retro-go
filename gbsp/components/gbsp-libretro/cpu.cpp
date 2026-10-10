@@ -27,6 +27,14 @@ extern "C" {
   #include "register_list.h"
 }
 
+/* Every access to the emulated PC goes through PCR (read) and PCW (write).
+ * By default they are reg[REG_PC] itself; with CONFIG_GBSP_THUMB_RESIDENT_PC
+ * the Thumb loop of execute_arm() redefines them to a local copy kept in a
+ * register (see there). PC_RELOAD() refreshes that copy from reg[]. */
+#define PCR (reg[REG_PC])
+#define PCW(x) (reg[REG_PC] = (x))
+#define PC_RELOAD() ((void)0)
+
 const u8 bit_count[256] =
 {
   0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 1, 2, 2, 3, 2, 3, 3,
@@ -580,7 +588,7 @@ const u8 bit_count[256] =
 
 #else
 #define check_pc_region()                                                     \
-  new_pc_region = (reg[REG_PC] >> 15);                                        \
+  new_pc_region = (PCR >> 15);                                        \
   if(new_pc_region != pc_region)                                              \
   {                                                                           \
     pc_region = new_pc_region;                                                \
@@ -595,7 +603,7 @@ const u8 bit_count[256] =
 #endif
 
 #define arm_pc_offset(val)                                                    \
-  reg[REG_PC] += val                                                          \
+  PCW(PCR + (val))                                                          \
 
 #define arm_next_instruction()                                                \
 {                                                                             \
@@ -604,7 +612,7 @@ const u8 bit_count[256] =
 }                                                                             \
 
 #define thumb_pc_offset(val)                                                  \
-  reg[REG_PC] += val                                                          \
+  PCW(PCR + (val))                                                          \
 
 
 // It should be okay to still generate result flags, spsr will overwrite them.
@@ -615,10 +623,10 @@ const u8 bit_count[256] =
   if((read_ioreg(REG_IE) & read_ioreg(REG_IF)) &&                             \
    read_ioreg(REG_IME) && ((reg[REG_CPSR] & 0x80) == 0))                      \
   {                                                                           \
-    REG_MODE(MODE_IRQ)[6] = reg[REG_PC] + 4;                                  \
+    REG_MODE(MODE_IRQ)[6] = PCR + 4;                                  \
     REG_SPSR(MODE_IRQ) = reg[REG_CPSR];                                       \
     reg[REG_CPSR] = 0xD2;                                                     \
-    reg[REG_PC] = 0x00000018;                                                 \
+    PCW(0x00000018);                                                 \
     set_cpu_mode(MODE_IRQ);                                                   \
     goto arm_loop;                                                            \
   }                                                                           \
@@ -872,7 +880,7 @@ const u32 spsr_masks[4] = { 0x00000000, 0x000000EF, 0xF0000000, 0xF00000EF };
   }                                                                           \
                                                                               \
   if (                                                                        \
-     (((_address >> 24) == 0) && (reg[REG_PC] >= 0x4000)) ||  /* BIOS read */ \
+     (((_address >> 24) == 0) && (PCR >= 0x4000)) ||  /* BIOS read */ \
      (_address & aligned_address_mask##size) ||      /* Unaligned access */   \
      !(map = memory_map_read[_address >> 15])        /* Unmapped memory */    \
   )                                                                           \
@@ -1042,7 +1050,7 @@ inline cpu_alert_type exec_arm_block_mem(u32 rn, u32 reglist, s32 &cycles_remain
     if (mode == AccLoad) {
       load_aligned32(address, reg[i]);
     } else {
-      store_aligned32(address, (i == REG_PC) ? reg[REG_PC] + 4 : reg[i]);
+      store_aligned32(address, (i == REG_PC) ? PCR + 4 : reg[i]);
     }
     address += 4;
   }
@@ -1334,7 +1342,7 @@ inline cpu_alert_type exec_thumb_block_mem(u32 rn, u32 reglist, s32 &cycles_rema
   thumb_pc_offset(-2);                                                        \
   if(rd == 15)                                                                \
   {                                                                           \
-    reg[REG_PC] = dest & ~0x01;                                               \
+    PCW(dest & ~0x01);                                               \
   }                                                                           \
   else                                                                        \
   {                                                                           \
@@ -1363,7 +1371,7 @@ inline cpu_alert_type exec_thumb_block_mem(u32 rn, u32 reglist, s32 &cycles_rema
   {                                                                           \
     thumb_pc_offset(2);                                                       \
   }                                                                           \
-  cycles_remaining -= ws_cyc_nseq[reg[REG_PC] >> 24][0];                      \
+  cycles_remaining -= ws_cyc_nseq[PCR >> 24][0];                      \
 }                                                                             \
 
 // When a mode change occurs from non-FIQ to non-FIQ retire the current
@@ -1437,10 +1445,10 @@ u32 check_and_raise_interrupts()
     reg[REG_BUS_VALUE] = 0xe55ec002;
 
     // Interrupt handler in BIOS
-    REG_MODE(MODE_IRQ)[6] = reg[REG_PC] + 4;
+    REG_MODE(MODE_IRQ)[6] = PCR + 4;
     REG_SPSR(MODE_IRQ) = reg[REG_CPSR];
     reg[REG_CPSR] = 0xD2;
-    reg[REG_PC] = 0x00000018;
+    PCW(0x00000018);
 
     set_cpu_mode(MODE_IRQ);
 
@@ -1500,11 +1508,14 @@ IRAM_ATTR void execute_arm(u32 cycles)
 #ifndef CONFIG_GBSP_NO_CHEAT_HOOK
   u32 cheat_hook = cheat_master_hook;
 #endif
-  u32 pc_region = (reg[REG_PC] >> 15);
+  u32 pc_region = (PCR >> 15);
   u8 *pc_address_block = memory_map_read[pc_region];
   u32 new_pc_region;
 #if GBSP_FETCH_PC_ACTIVE
   u32 fetch_pc;
+#ifdef CONFIG_GBSP_THUMB_RESIDENT_PC
+  u32 pc_l;   /* Thumb resident PC, see thumb_loop */
+#endif
 #endif
   s32 cycles_remaining;
   u32 update_ret;
@@ -1549,22 +1560,22 @@ arm_loop:
 
 #ifndef CONFIG_GBSP_NO_CHEAT_HOOK
        /* Process cheats if we are about to execute the cheat hook */
-       if (reg[REG_PC] == cheat_hook)
+       if (PCR == cheat_hook)
           process_cheats();
 #endif
 
        /* Execute ARM instruction */
        using_instruction(arm);
 #if GBSP_FETCH_PC_ACTIVE
-       fetch_pc = reg[REG_PC];
+       fetch_pc = PCR;
        check_pc_region();
        fetch_pc &= ~0x03;
-       reg[REG_PC] = fetch_pc;
+       PCW(fetch_pc);
        opcode = readaddress32(pc_address_block, (fetch_pc & 0x7FFF));
 #else
        check_pc_region();
-       reg[REG_PC] &= ~0x03;
-       opcode = readaddress32(pc_address_block, (reg[REG_PC] & 0x7FFF));
+       PCW(PCR & (~0x03));
+       opcode = readaddress32(pc_address_block, (PCR & 0x7FFF));
 #endif
        condition = opcode >> 28;
 
@@ -1661,7 +1672,7 @@ arm_loop:
        }
 
        #ifdef TRACE_INSTRUCTIONS
-       interp_trace_instruction(reg[REG_PC], 1);
+       interp_trace_instruction(PCR, 1);
        #endif
 
        switch((opcode >> 20) & 0xFF)
@@ -2136,7 +2147,7 @@ arm_loop:
                    u32 src = reg[rn];
                    if(src & 0x01)
                    {
-                      reg[REG_PC] = src - 1;
+                      PCW(src - 1);
                       reg[REG_CPSR] |= 0x20;
                       /* keeps the flags this read-modify-write carried over */
                       collapse_flags_consumer();
@@ -2144,9 +2155,9 @@ arm_loop:
                    }
                    else
                    {
-                      reg[REG_PC] = src;
+                      PCW(src);
                    }
-                   cycles_remaining -= ws_cyc_nseq[reg[REG_PC] >> 24][1];
+                   cycles_remaining -= ws_cyc_nseq[PCR >> 24][1];
                 }
                 else
                 {
@@ -3064,8 +3075,8 @@ arm_loop:
              {
                 /* B offset */
                 arm_decode_branch();
-                reg[REG_PC] += offset + 8;
-                cycles_remaining -= ws_cyc_nseq[reg[REG_PC] >> 24][1];
+                PCW(PCR + (offset + 8));
+                cycles_remaining -= ws_cyc_nseq[PCR >> 24][1];
                 break;
              }
 
@@ -3073,9 +3084,9 @@ arm_loop:
              {
                 /* BL offset */
                 arm_decode_branch();
-                reg[REG_LR] = reg[REG_PC] + 4;
-                reg[REG_PC] += offset + 8;
-                cycles_remaining -= ws_cyc_nseq[reg[REG_PC] >> 24][1];
+                reg[REG_LR] = PCR + 4;
+                PCW(PCR + (offset + 8));
+                cycles_remaining -= ws_cyc_nseq[PCR >> 24][1];
                 break;
              }
 
@@ -3088,9 +3099,9 @@ arm_loop:
           case 0xF0 ... 0xFF:
             collapse_flags();
             reg[REG_BUS_VALUE] = 0xe3a02004;  // After SWI, we read bios[0xE4]
-            REG_MODE(MODE_SUPERVISOR)[6] = reg[REG_PC] + 4;
+            REG_MODE(MODE_SUPERVISOR)[6] = PCR + 4;
             REG_SPSR(MODE_SUPERVISOR) = reg[REG_CPSR];
-            reg[REG_PC] = 0x00000008;
+            PCW(0x00000008);
             // Move to ARM mode, Supervisor mode and disable IRQs
             reg[REG_CPSR] = (reg[REG_CPSR] & ~0x3F) | 0x13 | 0x80;
             set_cpu_mode(MODE_SUPERVISOR);
@@ -3100,9 +3111,9 @@ arm_loop:
 skip_instruction:
 
        /* End of Execute ARM instruction */
-       cycles_remaining -= ws_cyc_seq[(reg[REG_PC] >> 24) & 0xF][1];
+       cycles_remaining -= ws_cyc_seq[(PCR >> 24) & 0xF][1];
 
-       if (reg[REG_PC] == idle_loop_target_pc && cycles_remaining > 0) cycles_remaining = 0;
+       if (PCR == idle_loop_target_pc && cycles_remaining > 0) cycles_remaining = 0;
 
        if (cpu_alert & (CPU_ALERT_HALT | CPU_ALERT_IRQ))
          goto alert;
@@ -3119,6 +3130,26 @@ skip_instruction:
     do
     {
 thumb_loop:
+#ifdef CONFIG_GBSP_THUMB_RESIDENT_PC
+       /* Thumb resident PC: pc_l always equals reg[REG_PC] in this loop.
+        * Every PC write is written through to reg[] (helpers such as the
+        * open-bus reads, and Rs = PC in the hi-register ops, read it
+        * there) and reads use pc_l. Thumb register indices are 0-7, so
+        * only the explicit PC writes and the block transfer helpers (which
+        * advance or load the PC themselves: PC_RELOAD() after them) change
+        * it. Every jump into this loop (mode switch, outer loop, SPSR
+        * restore) comes through this label and reloads pc_l; only the
+        * normal end of an instruction goes back to thumb_loop_pc. The
+        * slow page-change path still reloads from reg[] as before. */
+       pc_l = reg[REG_PC];
+thumb_loop_pc:
+#undef PCR
+#define PCR pc_l
+#undef PCW
+#define PCW(x) (reg[REG_PC] = pc_l = (x))
+#undef PC_RELOAD
+#define PC_RELOAD() (pc_l = reg[REG_PC])
+#endif
 #ifdef CONFIG_GBSP_CPU_ALERT_PER_INSTRUCTION
        /* cpu_alert only matters to the test at the end of this instruction:
         * everything that sets HALT/IRQ reaches that test in the same
@@ -3133,7 +3164,7 @@ thumb_loop:
 
 #ifndef CONFIG_GBSP_NO_CHEAT_HOOK
        /* Process cheats if we are about to execute the cheat hook */
-       if (reg[REG_PC] == cheat_hook)
+       if (PCR == cheat_hook)
           process_cheats();
 #endif
 
@@ -3141,19 +3172,19 @@ thumb_loop:
 
        using_instruction(thumb);
 #if GBSP_FETCH_PC_ACTIVE
-       fetch_pc = reg[REG_PC];
+       fetch_pc = PCR;
        check_pc_region();
        fetch_pc &= ~0x01;
-       reg[REG_PC] = fetch_pc;
+       PCW(fetch_pc);
        opcode = readaddress16(pc_address_block, (fetch_pc & 0x7FFF));
 #else
        check_pc_region();
-       reg[REG_PC] &= ~0x01;
-       opcode = readaddress16(pc_address_block, (reg[REG_PC] & 0x7FFF));
+       PCW(PCR & (~0x01));
+       opcode = readaddress16(pc_address_block, (PCR & 0x7FFF));
 #endif
 
        #ifdef TRACE_INSTRUCTIONS
-       interp_trace_instruction(reg[REG_PC], 0);
+       interp_trace_instruction(PCR, 0);
        #endif
 
        switch((opcode >> 8) & 0xFF)
@@ -3349,12 +3380,12 @@ thumb_loop:
                 src = reg[rs];
                 if(src & 0x01)
                 {
-                   reg[REG_PC] = src - 1;
+                   PCW(src - 1);
                 }
                 else
                 {
                    /* Switch to ARM mode */
-                   reg[REG_PC] = src;
+                   PCW(src);
                    reg[REG_CPSR] &= ~0x20;
                    collapse_flags();
                    goto arm_loop;
@@ -3364,7 +3395,7 @@ thumb_loop:
 
           case 0x48 ... 0x4F:
              /* LDR r0..7, [pc + imm] */
-             thumb_access_memory(load, imm, ((reg[REG_PC] - 2) & ~2) + (imm * 4) + 4, reg[(opcode >> 8) & 7], u32);
+             thumb_access_memory(load, imm, ((PCR - 2) & ~2) + (imm * 4) + 4, reg[(opcode >> 8) & 7], u32);
              break;
 
           case 0x50:
@@ -3457,7 +3488,7 @@ thumb_loop:
 
           case 0xA0 ... 0xA7:
              /* ADD r0..7, pc, +imm */
-             thumb_add_noflags(imm, ((opcode >> 8) & 7), (reg[REG_PC] & ~2) + 4, (imm * 4));
+             thumb_add_noflags(imm, ((opcode >> 8) & 7), (PCR & ~2) + 4, (imm * 4));
              break;
 
           case 0xA8 ... 0xAF:
@@ -3484,31 +3515,37 @@ thumb_loop:
           case 0xB4:  /* PUSH rlist */
              cpu_alert |= exec_thumb_block_mem<AccStore, AddrPreDec>(
                REG_SP, opcode & 0xFF, cycles_remaining);
+             PC_RELOAD();
              break;
 
           case 0xB5:  /* PUSH rlist, lr */
              cpu_alert |= exec_thumb_block_mem<AccStore, AddrPreDec>(
                REG_SP, (opcode & 0xFF) | (1 << REG_LR), cycles_remaining);
+             PC_RELOAD();
              break;
 
           case 0xBC:  /* POP rlist */
              cpu_alert |= exec_thumb_block_mem<AccLoad, AddrPostInc>(
                REG_SP, opcode & 0xFF, cycles_remaining);
+             PC_RELOAD();
              break;
 
           case 0xBD:  /* POP rlist, pc */
              cpu_alert |= exec_thumb_block_mem<AccLoad, AddrPostInc>(
                REG_SP, (opcode & 0xFF) | (1 << REG_PC), cycles_remaining);
+             PC_RELOAD();
              break;
 
           case 0xC0 ... 0xC7:    /* STMIA r0..7!, rlist */
              cpu_alert |= exec_thumb_block_mem<AccStore, AddrPostInc>(
                (opcode >> 8) & 7, (opcode & 0xFF), cycles_remaining);
+             PC_RELOAD();
              break;
 
           case 0xC8 ... 0xCF:    /* LDMIA r0..7!, rlist */
              cpu_alert |= exec_thumb_block_mem<AccLoad, AddrPostInc>(
                (opcode >> 8) & 7, (opcode & 0xFF), cycles_remaining);
+             PC_RELOAD();
              break;
 
           case 0xD0:   /* BEQ label */
@@ -3556,9 +3593,9 @@ thumb_loop:
 
           case 0xDF:
              collapse_flags();
-             REG_MODE(MODE_SUPERVISOR)[6] = reg[REG_PC] + 2;
+             REG_MODE(MODE_SUPERVISOR)[6] = PCR + 2;
              REG_SPSR(MODE_SUPERVISOR) = reg[REG_CPSR];
-             reg[REG_PC] = 0x00000008;
+             PCW(0x00000008);
              // Move to ARM mode, Supervisor mode and disable IRQs
              reg[REG_CPSR] = (reg[REG_CPSR] & ~0x3F) | 0x13 | 0x80;
              set_cpu_mode(MODE_SUPERVISOR);
@@ -3571,8 +3608,8 @@ thumb_loop:
                 /* B label */
                 thumb_decode_branch();
                 s32 br_offset = ((s32)(offset << 21) >> 20) + 4;
-                reg[REG_PC] += br_offset;
-                cycles_remaining -= ws_cyc_nseq[reg[REG_PC] >> 24][0];
+                PCW(PCR + (br_offset));
+                cycles_remaining -= ws_cyc_nseq[PCR >> 24][0];
                 break;
              }
 
@@ -3580,7 +3617,7 @@ thumb_loop:
              {
                 /* (low word) BL label */
                 thumb_decode_branch();
-                reg[REG_LR] = reg[REG_PC] + 4 + ((s32)(offset << 21) >> 9);
+                reg[REG_LR] = PCR + 4 + ((s32)(offset << 21) >> 9);
                 thumb_pc_offset(2);
                 break;
              }
@@ -3589,24 +3626,35 @@ thumb_loop:
              {
                 /* (high word) BL label */
                 thumb_decode_branch();
-                u32 newlr = (reg[REG_PC] + 2) | 0x01;
+                u32 newlr = (PCR + 2) | 0x01;
                 u32 newpc = reg[REG_LR] + (offset * 2);
                 reg[REG_LR] = newlr;
-                reg[REG_PC] = newpc;
+                PCW(newpc);
                 cycles_remaining -= ws_cyc_nseq[newpc >> 24][0];
                 break;
              }
        }
 
        /* End of Execute THUMB instruction */
-       cycles_remaining -= ws_cyc_seq[(reg[REG_PC] >> 24) & 0xF][0];
+       cycles_remaining -= ws_cyc_seq[(PCR >> 24) & 0xF][0];
 
-       if (reg[REG_PC] == idle_loop_target_pc && cycles_remaining > 0) cycles_remaining = 0;
+       if (PCR == idle_loop_target_pc && cycles_remaining > 0) cycles_remaining = 0;
 
        if (cpu_alert & (CPU_ALERT_HALT | CPU_ALERT_IRQ))
           goto alert;
 
+#ifdef CONFIG_GBSP_THUMB_RESIDENT_PC
+      if (cycles_remaining > 0) goto thumb_loop_pc;
+    } while(0);
+#undef PCR
+#define PCR (reg[REG_PC])
+#undef PCW
+#define PCW(x) (reg[REG_PC] = (x))
+#undef PC_RELOAD
+#define PC_RELOAD() ((void)0)
+#else
     } while(cycles_remaining > 0);
+#endif
 
     collapse_flags();
     update_ret = update_gba(cycles_remaining);
@@ -3634,12 +3682,12 @@ void init_cpu(void)
 
   if (selected_boot_mode == boot_game) {
     reg[REG_SP] = 0x03007F00;
-    reg[REG_PC] = 0x08000000;
+    PCW(0x08000000);
     reg[REG_CPSR] = 0x0000001F;   // system mode
     reg[CPU_MODE] = MODE_SYSTEM;
   } else {
     reg[REG_SP] = 0x03007F00;
-    reg[REG_PC] = 0x00000000;
+    PCW(0x00000000);
     reg[REG_CPSR] = 0x00000013 | 0xC0;  // supervisor
     reg[CPU_MODE] = MODE_SUPERVISOR;
   }
