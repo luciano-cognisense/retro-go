@@ -156,3 +156,34 @@ Everything in v4.1 stays as it was, including the savestate waitstate fix.
   neutral, CPU-side time -0.5%. Save/load and play worked in both games.
 
 The option keeps `default n`; only this profile turns it on.
+
+## performance-v6
+
+```sh
+gbsp/profiles/build-performance-v6.sh
+```
+
+Same mechanism and checks as v5. The profile is v5 plus one option:
+
+- `CONFIG_GBSP_ROM_SECOND_CHANCE`: the ROM page cache (32 KB pages in 1 MB
+  blocks; 6 MB on the device) is a circular FIFO that only skips the pages
+  marked sticky in the current frame, so a page whose code runs often is
+  still evicted in its turn. With the option, the sticky bits are ORed once
+  per frame into a 128-byte reference bitmap, and the eviction sends a
+  non-sticky page with its reference bit to the tail once, clearing the bit.
+  The bitmap (and the previous game's sticky bits) is cleared on every ROM
+  load. The hit path, `touch_gamepak_page()` and the CPU loop are unchanged.
+  In the measured build: BSS +128 B, flash +88 B, IRAM and `execute_arm`
+  frame unchanged; about 230 instructions per frame for the bitmap update.
+
+Everything in v5 stays as it was, including the resident Thumb PC.
+
+- Overclock and frameskip remain configurable in the menus.
+- **Cheats are unavailable**, as in v1-v5 (NO_CHEAT_HOOK).
+- Measured on the target hardware (oc 0, frameskip 0): Pokémon Fire Red with
+  map transitions, battles, buildings and save/load had 40% fewer ROM page
+  faults and 40% less ROM read time (38.7% fewer faults per 1000 frames),
+  with the cost per fault unchanged (~58 ms per 32 KB page). Mario fits the
+  cache and has no page faults. No cache size change and no prefetch.
+
+The option keeps `default n`; only this profile turns it on.
