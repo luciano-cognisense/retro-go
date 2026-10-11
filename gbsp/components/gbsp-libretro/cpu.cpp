@@ -875,7 +875,7 @@ const u32 spsr_masks[4] = { 0x00000000, 0x000000EF, 0xF0000000, 0xF00000EF };
   {                                                                           \
     /* Account for cycles and other stats */                                  \
     u8 region = _address >> 24;                                               \
-    cycles_remaining -= ws_cyc_nseq[region][(size - 8) / 16];                 \
+    cycles_remaining -= WS_NSEQ(region, (size - 8) / 16);                 \
     STATS_MEMORY_ACCESS(read, type, region);                                  \
   }                                                                           \
                                                                               \
@@ -906,7 +906,7 @@ const u32 spsr_masks[4] = { 0x00000000, 0x000000EF, 0xF0000000, 0xF00000EF };
   if(_address < 0x10000000)                                                   \
   {                                                                           \
     u8 region = _address >> 24;                                               \
-    cycles_remaining -= ws_cyc_nseq[region][(size - 8) / 16];                 \
+    cycles_remaining -= WS_NSEQ(region, (size - 8) / 16);                 \
     STATS_MEMORY_ACCESS(write, type, region);                                 \
   }                                                                           \
                                                                               \
@@ -921,7 +921,7 @@ const u32 spsr_masks[4] = { 0x00000000, 0x000000EF, 0xF0000000, 0xF00000EF };
   {                                                                           \
     /* Account for cycles and other stats */                                  \
     u8 region = _address >> 24;                                               \
-    cycles_remaining -= ws_cyc_seq[region][1];                                \
+    cycles_remaining -= WS_SEQ(region, 1);                                \
     STATS_MEMORY_ACCESS(read, u32, region);                                   \
   }                                                                           \
   if(_address < 0x10000000 && map)                                            \
@@ -941,7 +941,7 @@ const u32 spsr_masks[4] = { 0x00000000, 0x000000EF, 0xF0000000, 0xF00000EF };
   {                                                                           \
     /* Account for cycles and other stats */                                  \
     u8 region = _address >> 24;                                               \
-    cycles_remaining -= ws_cyc_seq[region][1];                                \
+    cycles_remaining -= WS_SEQ(region, 1);                                \
     STATS_MEMORY_ACCESS(write, u32, region);                                  \
   }                                                                           \
   gbsp_store_memory(32, _address, value);                               \
@@ -1371,7 +1371,7 @@ inline cpu_alert_type exec_thumb_block_mem(u32 rn, u32 reglist, s32 &cycles_rema
   {                                                                           \
     thumb_pc_offset(2);                                                       \
   }                                                                           \
-  cycles_remaining -= ws_cyc_nseq[PCR >> 24][0];                      \
+  cycles_remaining -= WS_NSEQ(PCR >> 24, 0);                      \
 }                                                                             \
 
 // When a mode change occurs from non-FIQ to non-FIQ retire the current
@@ -2157,7 +2157,7 @@ arm_loop:
                    {
                       PCW(src);
                    }
-                   cycles_remaining -= ws_cyc_nseq[PCR >> 24][1];
+                   cycles_remaining -= WS_NSEQ(PCR >> 24, 1);
                 }
                 else
                 {
@@ -3076,7 +3076,7 @@ arm_loop:
                 /* B offset */
                 arm_decode_branch();
                 PCW(PCR + (offset + 8));
-                cycles_remaining -= ws_cyc_nseq[PCR >> 24][1];
+                cycles_remaining -= WS_NSEQ(PCR >> 24, 1);
                 break;
              }
 
@@ -3086,7 +3086,7 @@ arm_loop:
                 arm_decode_branch();
                 reg[REG_LR] = PCR + 4;
                 PCW(PCR + (offset + 8));
-                cycles_remaining -= ws_cyc_nseq[PCR >> 24][1];
+                cycles_remaining -= WS_NSEQ(PCR >> 24, 1);
                 break;
              }
 
@@ -3111,7 +3111,7 @@ arm_loop:
 skip_instruction:
 
        /* End of Execute ARM instruction */
-       cycles_remaining -= ws_cyc_seq[(PCR >> 24) & 0xF][1];
+       cycles_remaining -= WS_SEQ((PCR >> 24) & 0xF, 1);
 
        if (PCR == idle_loop_target_pc && cycles_remaining > 0) cycles_remaining = 0;
 
@@ -3609,7 +3609,7 @@ thumb_loop_pc:
                 thumb_decode_branch();
                 s32 br_offset = ((s32)(offset << 21) >> 20) + 4;
                 PCW(PCR + (br_offset));
-                cycles_remaining -= ws_cyc_nseq[PCR >> 24][0];
+                cycles_remaining -= WS_NSEQ(PCR >> 24, 0);
                 break;
              }
 
@@ -3630,13 +3630,13 @@ thumb_loop_pc:
                 u32 newpc = reg[REG_LR] + (offset * 2);
                 reg[REG_LR] = newlr;
                 PCW(newpc);
-                cycles_remaining -= ws_cyc_nseq[newpc >> 24][0];
+                cycles_remaining -= WS_NSEQ(newpc >> 24, 0);
                 break;
              }
        }
 
        /* End of Execute THUMB instruction */
-       cycles_remaining -= ws_cyc_seq[(PCR >> 24) & 0xF][0];
+       cycles_remaining -= WS_SEQ((PCR >> 24) & 0xF, 0);
 
        if (PCR == idle_loop_target_pc && cycles_remaining > 0) cycles_remaining = 0;
 

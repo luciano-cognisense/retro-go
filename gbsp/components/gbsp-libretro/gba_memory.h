@@ -234,8 +234,17 @@ float rumble_active_pct();
 /* EDIT: Shouldn't this be extern ?! */
 extern const u32 def_seq_cycles[16][2];
 /* Cycles can change depending on WAITCNT */
+#ifdef CONFIG_GBSP_WAITSTATE_COMMON_BASE
+typedef struct { u8 seq[16][2]; u8 nseq[16][2]; } ws_cyc_tables;
+extern ws_cyc_tables ws_cyc;
+#define WS_SEQ(r, m) (ws_cyc.seq[(r)][(m)])
+#define WS_NSEQ(r, m) (ws_cyc.nseq[(r)][(m)])
+#else
 extern u8 ws_cyc_seq[16][2];
 extern u8 ws_cyc_nseq[16][2];
+#define WS_SEQ(r, m) (ws_cyc_seq[(r)][(m)])
+#define WS_NSEQ(r, m) (ws_cyc_nseq[(r)][(m)])
+#endif
 
 extern u32 gamepak_size;
 extern char gamepak_title[13];

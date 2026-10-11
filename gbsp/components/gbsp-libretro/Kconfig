@@ -173,6 +173,16 @@ menu "gpSP experiments"
             the crystal-fed systimer) once per overclock change. No effect at
             oc 0. Measured on hardware (oc 2): 32768Hz requested -> 28087Hz
             programmed, ~32768 samples/s consumed, at most 60fps sustained.
+    config GBSP_WAITSTATE_COMMON_BASE
+        bool "Store sequential and non-sequential waitstates behind one base"
+        default n
+        help
+            Places ws_cyc_seq and ws_cyc_nseq in one contiguous object. On
+            Thumb, GCC keeps the common base in a register across the dispatch
+            tails. A 985-million-instruction hardware histogram predicts about
+            1.13 fewer Xtensa instructions per Thumb instruction in Fire Red
+            and 1.05 in Mario. ARM remains effectively neutral, but the
+            execute_arm frame grows from 96 to 112 bytes. Experimental.
     config GBSP_AUDIO_TRANSITION_STATS
         bool "Audio transition and I2S DMA telemetry (diagnostic only)"
         default n

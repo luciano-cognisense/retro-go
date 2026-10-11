@@ -281,6 +281,47 @@ const u8 ws1_seq[] = {4, 1};
 const u8 ws2_seq[] = {8, 1};
 
 /* Divided by region and bus width (16/32) */
+#ifdef CONFIG_GBSP_WAITSTATE_COMMON_BASE
+ws_cyc_tables ws_cyc =
+{
+  {
+    { 1, 1 }, // BIOS
+    { 1, 1 }, // Invalid
+    { 3, 6 }, // EWRAM (default settings)
+    { 1, 1 }, // IWRAM
+    { 1, 1 }, // IO Registers
+    { 1, 2 }, // Palette RAM
+    { 1, 2 }, // VRAM
+    { 1, 2 }, // OAM
+    { 0, 0 }, // Gamepak (wait 0)
+    { 0, 0 }, // Gamepak (wait 0)
+    { 0, 0 }, // Gamepak (wait 1)
+    { 0, 0 }, // Gamepak (wait 1)
+    { 0, 0 }, // Gamepak (wait 2)
+    { 0, 0 }, // Gamepak (wait 2)
+    { 1, 1 }, // Invalid
+    { 1, 1 }, // Invalid
+  },
+  {
+    { 1, 1 }, // BIOS
+    { 1, 1 }, // Invalid
+    { 3, 6 }, // EWRAM (default settings)
+    { 1, 1 }, // IWRAM
+    { 1, 1 }, // IO Registers
+    { 1, 2 }, // Palette RAM
+    { 1, 2 }, // VRAM
+    { 1, 2 }, // OAM
+    { 0, 0 }, // Gamepak (wait 0)
+    { 0, 0 }, // Gamepak (wait 0)
+    { 0, 0 }, // Gamepak (wait 1)
+    { 0, 0 }, // Gamepak (wait 1)
+    { 0, 0 }, // Gamepak (wait 2)
+    { 0, 0 }, // Gamepak (wait 2)
+    { 1, 1 }, // Invalid
+    { 1, 1 }, // Invalid
+  }
+};
+#else
 u8 ws_cyc_seq[16][2] =
 {
   { 1, 1 }, // BIOS
@@ -319,6 +360,7 @@ u8 ws_cyc_nseq[16][2] =
   { 1, 1 }, // Invalid
   { 1, 1 }, // Invalid
 };
+#endif
 
 const u32 def_seq_cycles[16][2] =
 {
@@ -425,25 +467,25 @@ void reload_timing_info()
   uint16_t waitcnt = read_ioreg(REG_WAITCNT);
 
   /* Sequential 16 and 32 bit accesses to ROM */
-  ws_cyc_seq[0x8][0] = ws_cyc_seq[0x9][0] = 1 + ws0_seq[(waitcnt >>  4) & 1];
-  ws_cyc_seq[0xA][0] = ws_cyc_seq[0xB][0] = 1 + ws1_seq[(waitcnt >>  7) & 1];
-  ws_cyc_seq[0xC][0] = ws_cyc_seq[0xD][0] = 1 + ws2_seq[(waitcnt >> 10) & 1];
+  WS_SEQ(0x8, 0) = WS_SEQ(0x9, 0) = 1 + ws0_seq[(waitcnt >>  4) & 1];
+  WS_SEQ(0xA, 0) = WS_SEQ(0xB, 0) = 1 + ws1_seq[(waitcnt >>  7) & 1];
+  WS_SEQ(0xC, 0) = WS_SEQ(0xD, 0) = 1 + ws2_seq[(waitcnt >> 10) & 1];
 
   for (i = 0x8; i <= 0xD; i++)
   {
     /* 32 bit accesses just cost double due to 16 bit bus */
-    ws_cyc_seq[i][1] = ws_cyc_seq[i][0] * 2;
+    WS_SEQ(i, 1) = WS_SEQ(i, 0) * 2;
   }
 
   /* Sequential 16 and 32 bit accesses to ROM */
-  ws_cyc_nseq[0x8][0] = ws_cyc_nseq[0x9][0] = 1 + ws012_nonseq[(waitcnt >> 2) & 3];
-  ws_cyc_nseq[0xA][0] = ws_cyc_nseq[0xB][0] = 1 + ws012_nonseq[(waitcnt >> 5) & 3];
-  ws_cyc_nseq[0xC][0] = ws_cyc_nseq[0xD][0] = 1 + ws012_nonseq[(waitcnt >> 8) & 3];
+  WS_NSEQ(0x8, 0) = WS_NSEQ(0x9, 0) = 1 + ws012_nonseq[(waitcnt >> 2) & 3];
+  WS_NSEQ(0xA, 0) = WS_NSEQ(0xB, 0) = 1 + ws012_nonseq[(waitcnt >> 5) & 3];
+  WS_NSEQ(0xC, 0) = WS_NSEQ(0xD, 0) = 1 + ws012_nonseq[(waitcnt >> 8) & 3];
 
   for (i = 0x8; i <= 0xD; i++)
   {
     /* 32 bit accesses are a non-seq (16) + seq access (16) */
-    ws_cyc_nseq[i][1] = 1 + ws_cyc_nseq[i][0] + ws_cyc_seq[i][0];
+    WS_NSEQ(i, 1) = 1 + WS_NSEQ(i, 0) + WS_SEQ(i, 0);
   }
 }
 

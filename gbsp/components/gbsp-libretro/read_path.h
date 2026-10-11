@@ -14,7 +14,7 @@
     const u32 _address = (addr);                                             \
     if (_address < 0x10000000) {                                             \
         const u8 region = _address >> 24;                                    \
-        cycles_remaining -= ws_cyc_nseq[region][(size - 8) / 16];             \
+        cycles_remaining -= WS_NSEQ(region, (size - 8) / 16);             \
         STATS_MEMORY_ACCESS(read, type, region);                             \
         u8 *map;                                                            \
         if (!(_address & (aligned_address_mask##size & 3)) &&                \
