@@ -12,6 +12,11 @@
 #include <driver/gpio.h>
 #include <driver/i2s.h>
 
+#if defined(CONFIG_RG_AUDIO_I2S_LIVE_RATE) && CONFIG_RG_AUDIO_I2S_LIVE_RATE
+#include <hal/i2s_hal.h>
+#include <soc/clk_tree_defs.h>
+#endif
+
 #ifdef RG_GPIO_SND_AMP_ENABLE_INVERT
 #define MUTE_ENABLE 1
 #define MUTE_DISABLE 0
@@ -82,6 +87,7 @@ bool rg_audio_i2s_get_telemetry(rg_audio_i2s_telemetry_t *out)
         return false;
     telemetry_drain_events();
     *out = telemetry;
+    telemetry.eventBacklogMax = 0;
     return state.last_error == NULL;
 }
 #endif
@@ -163,7 +169,35 @@ static bool driver_set_sample_rates(int sampleRate)
 #if defined(CONFIG_RG_AUDIO_I2S_TELEMETRY) && CONFIG_RG_AUDIO_I2S_TELEMETRY
     telemetry_drain_events();
 #endif
-    bool ok = i2s_set_sample_rates(I2S_NUM_0, sampleRate) == ESP_OK;
+    bool ok;
+#if defined(CONFIG_RG_AUDIO_I2S_LIVE_RATE) && CONFIG_RG_AUDIO_I2S_LIVE_RATE
+    if (state.device == 1)
+    {
+        // This target's external DAC path is master, stereo and 16-bit. The
+        // legacy driver therefore uses 256*Fs MCLK and an 8:1 MCLK/BCLK
+        // divider. No slot or DMA layout changes when only Fs changes.
+        // rg_audio serializes this call with driver_submit().
+        i2s_hal_context_t hal;
+        i2s_hal_clock_info_t clock = {
+            .sclk = 160000000,
+            .mclk = (uint32_t)sampleRate * 256,
+            .bclk = (uint32_t)sampleRate * 32,
+            .mclk_div = 160000000 / ((uint32_t)sampleRate * 256),
+            .bclk_div = 8,
+        };
+        i2s_hal_init(&hal, I2S_NUM_0);
+        i2s_hal_set_tx_clock(&hal, &clock, I2S_CLK_SRC_DEFAULT);
+        ok = true;
+    }
+    else
+#endif
+    {
+        ok = i2s_set_sample_rates(I2S_NUM_0, sampleRate) == ESP_OK;
+#if defined(CONFIG_RG_AUDIO_I2S_TELEMETRY) && CONFIG_RG_AUDIO_I2S_TELEMETRY
+        if (ok)
+            telemetry.dmaRestarts++;
+#endif
+    }
 #if defined(CONFIG_RG_AUDIO_I2S_TELEMETRY) && CONFIG_RG_AUDIO_I2S_TELEMETRY
     if (ok)
         telemetry.rateEpoch++;

@@ -47,6 +47,7 @@ typedef struct
     uint32_t writeMaxUs;
     uint32_t eventBacklogMax;
     uint32_t rateEpoch;
+    uint32_t dmaRestarts;
     uint16_t dmaBufferFrames;
     uint16_t dmaBufferCount;
 } rg_audio_i2s_telemetry_t;
@@ -71,7 +72,8 @@ int rg_audio_get_sample_rate(void);
 void rg_audio_set_sample_rate(int sample_rate);
 
 // Diagnostic-only. Available when CONFIG_RG_AUDIO_I2S_TELEMETRY is enabled.
-// Counters are monotonic within an I2S driver lifetime. rateEpoch increments
-// after every hardware sample-rate reprogramming, whose DMA reset makes an
-// occupancy estimate from the previous epoch invalid.
+// Counters are monotonic within an I2S driver lifetime, except eventBacklogMax,
+// which reports and resets the peak since the previous read. rateEpoch counts
+// successful rate changes; dmaRestarts counts those that used the legacy
+// stop/start path.
 bool rg_audio_i2s_get_telemetry(rg_audio_i2s_telemetry_t *out);

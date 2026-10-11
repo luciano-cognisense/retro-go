@@ -184,4 +184,15 @@ menu "gpSP experiments"
             epochs. Samples are buffered in RAM and written with the normal
             five-second profile window, so diagnosis does not add SD writes to
             the transition being measured. Does not change the rate policy.
+    config GBSP_AUDIO_LIVE_RATE
+        bool "Preserve the I2S DMA ring across audio-rate changes"
+        default n
+        depends on GBSP_AUDIO_CLOCK_COMP && IDF_TARGET_ESP32S3
+        select RG_AUDIO_I2S_LIVE_RATE
+        help
+            Keeps the accepted K audio-control policy but applies its rate
+            changes by updating the ESP32-S3 external-I2S TX clock divider in
+            place. This avoids the stop/start performed by the legacy API and
+            preserves the DMA descriptor position and queued audio. Other
+            devices fall back to i2s_set_sample_rates().
 endmenu

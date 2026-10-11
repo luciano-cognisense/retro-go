@@ -17,4 +17,15 @@ menu "Retro-Go"
             replayed DMA buffers, frames accepted, time spent specifically in
             i2s_write(), event backlog and sample-rate reset epochs. Off by
             default; applications that need transition traces select it.
+    config RG_AUDIO_I2S_LIVE_RATE
+        bool "Update the ESP32-S3 external-I2S clock without restarting DMA"
+        default n
+        depends on IDF_TARGET_ESP32S3
+        help
+            Updates only the TX clock divider for the external stereo 16-bit
+            I2S path. The legacy i2s_set_sample_rates() implementation stops
+            and restarts the channel even when the DMA layout is unchanged;
+            this option preserves the queued descriptors across rate changes.
+            Applications must opt in. Other audio devices retain the legacy
+            driver operation.
 endmenu

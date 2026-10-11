@@ -334,6 +334,11 @@ static void audio_clock_sync(void)
 #if defined(CONFIG_GBSP_AUDIO_TRANSITION_STATS) && CONFIG_GBSP_AUDIO_TRANSITION_STATS
 #define GBSP_AUDIO_TRANSITION_STATS 1
 #define AUDIO_TRANSITION_FMT " | audio_transition_stats 1"
+#if defined(CONFIG_GBSP_AUDIO_LIVE_RATE) && CONFIG_GBSP_AUDIO_LIVE_RATE
+#define AUDIO_LIVE_RATE_FMT " | audio_live_rate 1"
+#else
+#define AUDIO_LIVE_RATE_FMT " | audio_live_rate 0"
+#endif
 #define AUDIO_TRANSITION_RECORDS 8
 typedef struct
 {
@@ -342,6 +347,7 @@ typedef struct
     int capability, median, target, rateBefore, rateAfter, programmed;
     int32_t balance;
     uint32_t epochBefore, epochAfter;
+    uint32_t restarts;
     uint8_t reason;
 } audio_transition_record_t;
 static struct
@@ -399,6 +405,7 @@ static void audio_transition_record(int64_t elapsed, int64_t frames, int median,
     r->balance = submitted > INT32_MAX || played > INT32_MAX ? INT32_MIN : (int32_t)submitted - (int32_t)played;
     r->epochBefore = epochBefore;
     r->epochAfter = now.rateEpoch;
+    r->restarts = now.dmaRestarts - audioTransition.previous.dmaRestarts;
     r->reason = reason;
     audioTransition.previous = now;
     (void)frames; // kept distinct from driver-accepted frames for future loss checks
@@ -406,6 +413,7 @@ static void audio_transition_record(int64_t elapsed, int64_t frames, int median,
 #else
 #define GBSP_AUDIO_TRANSITION_STATS 0
 #define AUDIO_TRANSITION_FMT ""
+#define AUDIO_LIVE_RATE_FMT ""
 #define audio_transition_rebaseline() do { } while (0)
 #define audio_transition_reset() do { } while (0)
 #define audio_transition_record(...) do { } while (0)
@@ -598,7 +606,7 @@ static void profile_flush(void)
         // 0x3fc.../0x3fd... is internal SRAM on the S3, 0x3c... is PSRAM.
         fprintf(fp, "\n=== gbsp %s | %s | iwram %s | fb %s | cache de ROM %dMB"
                     " | RAM interna no boot: %dKB livre, maior bloco %dKB"
-                    " | config compilada: dcache %dKB | psram %dMHz | fast_ram %d (%s) | memstats %d | compact_reads %d | sparse_regs %d | cpu_rodata_dram %d" RENDER_CORE1_FMT AUDIO_TRANSITION_FMT " ===\n",
+                    " | config compilada: dcache %dKB | psram %dMHz | fast_ram %d (%s) | memstats %d | compact_reads %d | sparse_regs %d | cpu_rodata_dram %d" RENDER_CORE1_FMT AUDIO_TRANSITION_FMT AUDIO_LIVE_RATE_FMT " ===\n",
                 app->version ? app->version : "?",
                 app->romPath ? rg_basename(app->romPath) : "?",
                 ((u32)iwram_ptr >> 24) == 0x3c ? "PSRAM" : "interna",
@@ -685,13 +693,13 @@ static void profile_flush(void)
         const audio_transition_record_t *r = &audioTransition.records[i];
         fprintf(fp, "audio_transicao %u ms | produzido %u | tocado %u | saldo %d | underrun %u"
                     " | i2s_write %u us em %u chamadas (%u >1ms) | backlog_max %u"
-                    " | cap %d mediana %d alvo %d | taxa %d->%d programada %d | motivo %u | epoca %u->%u\n",
+                    " | cap %d mediana %d alvo %d | taxa %d->%d programada %d | motivo %u | epoca %u->%u | reinicios %u\n",
                 (unsigned)(r->elapsedUs / 1000), (unsigned)r->produced, (unsigned)r->played,
                 (int)r->balance, (unsigned)r->underruns, (unsigned)r->writeUs,
                 (unsigned)r->writeCalls, (unsigned)r->slowWrites, (unsigned)r->backlogMax,
                 r->capability, r->median, r->target, r->rateBefore, r->rateAfter,
                 r->programmed, (unsigned)r->reason, (unsigned)r->epochBefore,
-                (unsigned)r->epochAfter);
+                (unsigned)r->epochAfter, (unsigned)r->restarts);
     }
     if (audioTransition.dropped)
         fprintf(fp, "audio_transicao descartadas %u\n", audioTransition.dropped);
