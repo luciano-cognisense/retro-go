@@ -27,11 +27,11 @@ static inline void gbsp_thumb_handler_profile_reset(void)
 
 static inline void gbsp_thumb_handler_profile_write(FILE *fp, unsigned frames)
 {
-    fprintf(fp, "thumb_handler_profile_v1 frames=%u total=%u timing=INVALIDO\\n",
+    fprintf(fp, "thumb_handler_profile_v1 frames=%u total=%u timing=INVALIDO\n",
             frames, (unsigned)gbsp_thumb_handler_profile.total);
     for (unsigned k = 0; k < 256; ++k)
         if (gbsp_thumb_handler_profile.handler[k])
-            fprintf(fp, "thumb_handler k=%02x count=%u\\n", k,
+            fprintf(fp, "thumb_handler k=%02x count=%u\n", k,
                     (unsigned)gbsp_thumb_handler_profile.handler[k]);
 }
 #else
