@@ -187,3 +187,29 @@ Everything in v5 stays as it was, including the resident Thumb PC.
   cache and has no page faults. No cache size change and no prefetch.
 
 The option keeps `default n`; only this profile turns it on.
+
+## performance-v7
+
+```sh
+gbsp/profiles/build-performance-v7.sh
+```
+
+Same mechanism and checks as v6. The profile is v6 plus one option:
+
+- `CONFIG_GBSP_AUDIO_LIVE_RATE`: keeps the accepted K audio-rate policy, but
+  applies each decision by updating the ESP32-S3 external-I2S TX clock divider
+  while the channel remains active. This preserves the DMA descriptor position
+  and queued samples instead of stopping and restarting the channel. Other
+  targets and audio devices retain the legacy operation.
+
+Everything in v6 stays as it was, including ROM-cache second chance. Diagnostic
+transition telemetry remains disabled in this profile.
+
+- Overclock and frameskip remain configurable in the menus.
+- **Cheats are unavailable**, as in v1-v6 (`NO_CHEAT_HOOK`).
+- Measured on the target hardware: all sampled rate changes completed with zero
+  DMA restarts. In Fire Red, transition windows had about 27% fewer underruns
+  and 18% less `i2s_write` time in non-identical sessions, while stable-window
+  underruns stayed essentially unchanged. The sound was judged more natural.
+
+The option keeps `default n`; only this profile turns it on.

@@ -193,6 +193,9 @@ menu "gpSP experiments"
             Keeps the accepted K audio-control policy but applies its rate
             changes by updating the ESP32-S3 external-I2S TX clock divider in
             place. This avoids the stop/start performed by the legacy API and
-            preserves the DMA descriptor position and queued audio. Other
-            devices fall back to i2s_set_sample_rates().
+            preserves the DMA descriptor position and queued audio. Measured
+            on hardware: every rate change completed without a DMA restart,
+            transition windows had fewer underruns and lower i2s_write time,
+            and the sound was judged more natural. Other devices fall back to
+            i2s_set_sample_rates().
 endmenu
