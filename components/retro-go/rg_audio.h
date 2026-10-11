@@ -36,6 +36,21 @@ typedef struct
     int64_t busyTime;
 } rg_audio_counters_t;
 
+typedef struct
+{
+    uint64_t submittedFrames;
+    uint64_t writeTimeUs;
+    uint32_t txDone;
+    uint32_t underruns;
+    uint32_t writeCalls;
+    uint32_t slowWrites;
+    uint32_t writeMaxUs;
+    uint32_t eventBacklogMax;
+    uint32_t rateEpoch;
+    uint16_t dmaBufferFrames;
+    uint16_t dmaBufferCount;
+} rg_audio_i2s_telemetry_t;
+
 void rg_audio_init(int sample_rate);
 void rg_audio_deinit(void);
 void rg_audio_submit(const rg_audio_frame_t *frames, size_t count);
@@ -54,3 +69,9 @@ bool rg_audio_get_mute(void);
 void rg_audio_set_mute(bool mute);
 int rg_audio_get_sample_rate(void);
 void rg_audio_set_sample_rate(int sample_rate);
+
+// Diagnostic-only. Available when CONFIG_RG_AUDIO_I2S_TELEMETRY is enabled.
+// Counters are monotonic within an I2S driver lifetime. rateEpoch increments
+// after every hardware sample-rate reprogramming, whose DMA reset makes an
+// occupancy estimate from the previous epoch invalid.
+bool rg_audio_i2s_get_telemetry(rg_audio_i2s_telemetry_t *out);

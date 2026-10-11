@@ -322,11 +322,85 @@ static void audio_clock_sync(void)
 // Profile line field, present only when compiled in (same rule as render_core1).
 #define AUDIO_CLOCK_FMT " | dac_programado %dHz (cpu %d kHz)"
 #define AUDIO_CLOCK_ARG , audio_dac_rate(audioRate), (int)(audioClockHz / 1000)
+#define AUDIO_DAC_PROGRAMMED(rate) audio_dac_rate(rate)
 #else
 #define audio_dac_set(rate) rg_audio_set_sample_rate(rate)
 #define audio_clock_sync() do { } while (0)
 #define AUDIO_CLOCK_FMT ""
 #define AUDIO_CLOCK_ARG
+#define AUDIO_DAC_PROGRAMMED(rate) (rate)
+#endif
+
+#if defined(CONFIG_GBSP_AUDIO_TRANSITION_STATS) && CONFIG_GBSP_AUDIO_TRANSITION_STATS
+#define GBSP_AUDIO_TRANSITION_STATS 1
+#define AUDIO_TRANSITION_RECORDS 8
+typedef struct
+{
+    uint32_t elapsedUs, produced, played, underruns;
+    uint32_t writeUs, writeCalls, slowWrites, backlogMax;
+    int capability, median, target, rateBefore, rateAfter, programmed;
+    int32_t balance;
+    uint32_t epochBefore, epochAfter;
+    uint8_t reason;
+} audio_transition_record_t;
+static struct
+{
+    rg_audio_i2s_telemetry_t previous;
+    audio_transition_record_t records[AUDIO_TRANSITION_RECORDS];
+    unsigned count, dropped;
+} audioTransition;
+
+static void audio_transition_reset(void)
+{
+    audioTransition.count = 0;
+    audioTransition.dropped = 0;
+    rg_audio_i2s_get_telemetry(&audioTransition.previous);
+}
+
+static void audio_transition_record(int64_t elapsed, int64_t frames, int median, int target,
+                                    int rateBefore, int rateAfter, unsigned reason,
+                                    uint32_t epochBefore)
+{
+    rg_audio_i2s_telemetry_t now;
+    if (!rg_audio_i2s_get_telemetry(&now))
+        return;
+    if (audioTransition.count >= AUDIO_TRANSITION_RECORDS)
+    {
+        audioTransition.dropped++;
+        audioTransition.previous = now;
+        return;
+    }
+
+    audio_transition_record_t *r = &audioTransition.records[audioTransition.count++];
+    const uint32_t done = now.txDone - audioTransition.previous.txDone;
+    const uint64_t submitted = now.submittedFrames - audioTransition.previous.submittedFrames;
+    const uint64_t played = (uint64_t)done * now.dmaBufferFrames;
+    memset(r, 0, sizeof(*r));
+    r->elapsedUs = (uint32_t)elapsed;
+    r->produced = (uint32_t)submitted;
+    r->played = (uint32_t)played;
+    r->underruns = now.underruns - audioTransition.previous.underruns;
+    r->writeUs = (uint32_t)(now.writeTimeUs - audioTransition.previous.writeTimeUs);
+    r->writeCalls = now.writeCalls - audioTransition.previous.writeCalls;
+    r->slowWrites = now.slowWrites - audioTransition.previous.slowWrites;
+    r->backlogMax = now.eventBacklogMax;
+    r->capability = audioCapability;
+    r->median = median;
+    r->target = target;
+    r->rateBefore = rateBefore;
+    r->rateAfter = rateAfter;
+    r->programmed = AUDIO_DAC_PROGRAMMED(rateAfter);
+    r->balance = submitted > INT32_MAX || played > INT32_MAX ? INT32_MIN : (int32_t)submitted - (int32_t)played;
+    r->epochBefore = epochBefore;
+    r->epochAfter = now.rateEpoch;
+    r->reason = reason;
+    audioTransition.previous = now;
+    (void)frames; // kept distinct from driver-accepted frames for future loss checks
+}
+#else
+#define GBSP_AUDIO_TRANSITION_STATS 0
+#define audio_transition_reset() do { } while (0)
+#define audio_transition_record(...) do { } while (0)
 #endif
 
 // Start a fresh measuring window, keeping the history. Called whenever real time
@@ -416,6 +490,12 @@ static void audio_sync_update(void)
     // than to be continually almost right -- but not when sitting still means
     // running dry, hence the two overrides.
     bool move;
+#if GBSP_AUDIO_TRANSITION_STATS
+    const int rateBefore = audioRate;
+    unsigned moveReason = 0;
+    rg_audio_i2s_telemetry_t telemetryBefore;
+    rg_audio_i2s_get_telemetry(&telemetryBefore);
+#endif
     if (target == AUDIO_SAMPLE_RATE)
         move = (audioRate != AUDIO_SAMPLE_RATE);        // nothing beats no detune
     else if (audioStarving >= AUDIO_SYNC_STARVE)
@@ -425,11 +505,18 @@ static void audio_sync_update(void)
 
     if (move)
     {
+#if GBSP_AUDIO_TRANSITION_STATS
+        moveReason = target == AUDIO_SAMPLE_RATE ? 1 : audioStarving >= AUDIO_SYNC_STARVE ? 2 : 3;
+#endif
         audioRate = target;
         audioStarving = 0;
         profile.audioRateChanges++;
         audio_dac_set(audioRate);
     }
+#if GBSP_AUDIO_TRANSITION_STATS
+    audio_transition_record(elapsed, frames, median, target, rateBefore, audioRate,
+                            moveReason, telemetryBefore.rateEpoch);
+#endif
 }
 
 void netpacket_poll_receive()
@@ -452,6 +539,7 @@ static bool screenshot_handler(const char *filename, int width, int height)
 static void profile_reset_window(void)
 {
     memset(&profile, 0, sizeof(profile));
+    audio_transition_reset();
     profile.rtcStart = (int64_t)esp_rtc_get_time_us();
     gamepak_page_faults = 0;
     gamepak_page_time = 0;
@@ -583,6 +671,23 @@ static void profile_flush(void)
             (int)gbsp_scanline_count);
 
     gbsp_memory_profile_write(fp, (unsigned)n);
+#if GBSP_AUDIO_TRANSITION_STATS
+    for (unsigned i = 0; i < audioTransition.count; ++i)
+    {
+        const audio_transition_record_t *r = &audioTransition.records[i];
+        fprintf(fp, "audio_transicao %u ms | produzido %u | tocado %u | saldo %d | underrun %u"
+                    " | i2s_write %u us em %u chamadas (%u >1ms) | backlog_max %u"
+                    " | cap %d mediana %d alvo %d | taxa %d->%d programada %d | motivo %u | epoca %u->%u\n",
+                (unsigned)(r->elapsedUs / 1000), (unsigned)r->produced, (unsigned)r->played,
+                (int)r->balance, (unsigned)r->underruns, (unsigned)r->writeUs,
+                (unsigned)r->writeCalls, (unsigned)r->slowWrites, (unsigned)r->backlogMax,
+                r->capability, r->median, r->target, r->rateBefore, r->rateAfter,
+                r->programmed, (unsigned)r->reason, (unsigned)r->epochBefore,
+                (unsigned)r->epochAfter);
+    }
+    if (audioTransition.dropped)
+        fprintf(fp, "audio_transicao descartadas %u\n", audioTransition.dropped);
+#endif
 #if GBSP_RENDER_ASYNC_STATS
     {
         gbsp_render_stats_t rs;

@@ -40,6 +40,34 @@
 #define DMA_BUFFER_COUNT RG_AUDIO_DMA_BUFFER_COUNT
 #define DMA_BUFFER_LEN RG_AUDIO_DMA_BUFFER_LEN
 
+#if defined(CONFIG_RG_AUDIO_I2S_TELEMETRY) && CONFIG_RG_AUDIO_I2S_TELEMETRY
+#define TELEMETRY_EVENT_QUEUE_LEN 256
+static QueueHandle_t telemetry_event_queue;
+static rg_audio_i2s_telemetry_t telemetry;
+#define I2S_EVENT_QUEUE_ARGS TELEMETRY_EVENT_QUEUE_LEN, &telemetry_event_queue
+
+static void telemetry_drain_events(void)
+{
+    if (!telemetry_event_queue)
+        return;
+
+    UBaseType_t backlog = uxQueueMessagesWaiting(telemetry_event_queue);
+    if (backlog > telemetry.eventBacklogMax)
+        telemetry.eventBacklogMax = backlog;
+
+    i2s_event_t event;
+    while (xQueueReceive(telemetry_event_queue, &event, 0) == pdTRUE)
+    {
+        if (event.type == I2S_EVENT_TX_DONE)
+            telemetry.txDone++;
+        else if (event.type == I2S_EVENT_TX_Q_OVF)
+            telemetry.underruns++;
+    }
+}
+#else
+#define I2S_EVENT_QUEUE_ARGS 0, NULL
+#endif
+
 static struct {
     const char *last_error;
     int device;
@@ -47,10 +75,27 @@ static struct {
     bool muted;
 } state;
 
+#if defined(CONFIG_RG_AUDIO_I2S_TELEMETRY) && CONFIG_RG_AUDIO_I2S_TELEMETRY
+bool rg_audio_i2s_get_telemetry(rg_audio_i2s_telemetry_t *out)
+{
+    if (!out)
+        return false;
+    telemetry_drain_events();
+    *out = telemetry;
+    return state.last_error == NULL;
+}
+#endif
+
 static bool driver_init(int device, int sample_rate)
 {
     state.last_error = NULL;
     state.device = device;
+#if defined(CONFIG_RG_AUDIO_I2S_TELEMETRY) && CONFIG_RG_AUDIO_I2S_TELEMETRY
+    memset(&telemetry, 0, sizeof(telemetry));
+    telemetry_event_queue = NULL;
+    telemetry.dmaBufferFrames = DMA_BUFFER_LEN;
+    telemetry.dmaBufferCount = DMA_BUFFER_COUNT;
+#endif
 
     if (state.device == 0)
     {
@@ -64,7 +109,7 @@ static bool driver_init(int device, int sample_rate)
             .intr_alloc_flags = 0, // ESP_INTR_FLAG_LEVEL1
             .dma_buf_count = DMA_BUFFER_COUNT,
             .dma_buf_len = DMA_BUFFER_LEN,
-        }, 0, NULL);
+        }, I2S_EVENT_QUEUE_ARGS);
         if (ret == ESP_OK)
             ret = i2s_set_dac_mode(RG_AUDIO_USE_INT_DAC);
         if (ret != ESP_OK)
@@ -88,7 +133,7 @@ static bool driver_init(int device, int sample_rate)
         #if CONFIG_IDF_TARGET_ESP32
             .use_apll = true, // External DAC may care about accuracy
         #endif
-        }, 0, NULL);
+        }, I2S_EVENT_QUEUE_ARGS);
         if (ret == ESP_OK)
         {
             ret = i2s_set_pin(I2S_NUM_0, &(i2s_pin_config_t) {
@@ -115,7 +160,15 @@ static bool driver_init(int device, int sample_rate)
 
 static bool driver_set_sample_rates(int sampleRate)
 {
-    return i2s_set_sample_rates(I2S_NUM_0, sampleRate) == ESP_OK;
+#if defined(CONFIG_RG_AUDIO_I2S_TELEMETRY) && CONFIG_RG_AUDIO_I2S_TELEMETRY
+    telemetry_drain_events();
+#endif
+    bool ok = i2s_set_sample_rates(I2S_NUM_0, sampleRate) == ESP_OK;
+#if defined(CONFIG_RG_AUDIO_I2S_TELEMETRY) && CONFIG_RG_AUDIO_I2S_TELEMETRY
+    if (ok)
+        telemetry.rateEpoch++;
+#endif
+    return ok;
 }
 
 static bool driver_deinit(void)
@@ -199,11 +252,26 @@ static bool driver_submit(const rg_audio_frame_t *frames, size_t count)
         if (++pos == RG_COUNT(buffer) || i == count - 1)
         {
             size_t written;
+#if defined(CONFIG_RG_AUDIO_I2S_TELEMETRY) && CONFIG_RG_AUDIO_I2S_TELEMETRY
+            int64_t write_start = rg_system_timer();
+#endif
             if (i2s_write(I2S_NUM_0, (void *)buffer, pos * 4, &written, 1000) != ESP_OK)
                 RG_LOGW("I2S Submission error! Written: %d/%d\n", written, pos * 4);
+#if defined(CONFIG_RG_AUDIO_I2S_TELEMETRY) && CONFIG_RG_AUDIO_I2S_TELEMETRY
+            uint32_t write_us = (uint32_t)(rg_system_timer() - write_start);
+            telemetry.writeCalls++;
+            telemetry.writeTimeUs += write_us;
+            telemetry.slowWrites += write_us > 1000;
+            if (write_us > telemetry.writeMaxUs)
+                telemetry.writeMaxUs = write_us;
+            telemetry.submittedFrames += written / sizeof(rg_audio_frame_t);
+#endif
             pos = 0;
         }
     }
+#if defined(CONFIG_RG_AUDIO_I2S_TELEMETRY) && CONFIG_RG_AUDIO_I2S_TELEMETRY
+    telemetry_drain_events();
+#endif
     return true;
 }
 

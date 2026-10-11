@@ -173,4 +173,15 @@ menu "gpSP experiments"
             the crystal-fed systimer) once per overclock change. No effect at
             oc 0. Measured on hardware (oc 2): 32768Hz requested -> 28087Hz
             programmed, ~32768 samples/s consumed, at most 60fps sustained.
+    config GBSP_AUDIO_TRANSITION_STATS
+        bool "Audio transition and I2S DMA telemetry (diagnostic only)"
+        default n
+        select RG_AUDIO_I2S_TELEMETRY
+        help
+            Records each one-second audio-control decision together with exact
+            I2S-driver deltas: accepted and completed frames, underrun replays,
+            time spent in i2s_write(), event backlog and sample-rate reset
+            epochs. Samples are buffered in RAM and written with the normal
+            five-second profile window, so diagnosis does not add SD writes to
+            the transition being measured. Does not change the rate policy.
 endmenu

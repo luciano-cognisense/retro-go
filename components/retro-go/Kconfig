@@ -9,4 +9,12 @@ menu "Retro-Go"
             Costs one increment per submitted frame and one store per
             displayed frame. Off by default; an application that needs it
             selects it (gbsp's hybrid render does).
+    config RG_AUDIO_I2S_TELEMETRY
+        bool "Measure I2S DMA queue behaviour"
+        default n
+        help
+            Diagnostic-only counters for the legacy I2S driver: completed and
+            replayed DMA buffers, frames accepted, time spent specifically in
+            i2s_write(), event backlog and sample-rate reset epochs. Off by
+            default; applications that need transition traces select it.
 endmenu
