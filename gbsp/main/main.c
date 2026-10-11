@@ -333,6 +333,7 @@ static void audio_clock_sync(void)
 
 #if defined(CONFIG_GBSP_AUDIO_TRANSITION_STATS) && CONFIG_GBSP_AUDIO_TRANSITION_STATS
 #define GBSP_AUDIO_TRANSITION_STATS 1
+#define AUDIO_TRANSITION_FMT " | audio_transition_stats 1"
 #define AUDIO_TRANSITION_RECORDS 8
 typedef struct
 {
@@ -350,11 +351,16 @@ static struct
     unsigned count, dropped;
 } audioTransition;
 
+static void audio_transition_rebaseline(void)
+{
+    rg_audio_i2s_get_telemetry(&audioTransition.previous);
+}
+
 static void audio_transition_reset(void)
 {
     audioTransition.count = 0;
     audioTransition.dropped = 0;
-    rg_audio_i2s_get_telemetry(&audioTransition.previous);
+    audio_transition_rebaseline();
 }
 
 static void audio_transition_record(int64_t elapsed, int64_t frames, int median, int target,
@@ -399,6 +405,8 @@ static void audio_transition_record(int64_t elapsed, int64_t frames, int median,
 }
 #else
 #define GBSP_AUDIO_TRANSITION_STATS 0
+#define AUDIO_TRANSITION_FMT ""
+#define audio_transition_rebaseline() do { } while (0)
 #define audio_transition_reset() do { } while (0)
 #define audio_transition_record(...) do { } while (0)
 #endif
@@ -590,7 +598,7 @@ static void profile_flush(void)
         // 0x3fc.../0x3fd... is internal SRAM on the S3, 0x3c... is PSRAM.
         fprintf(fp, "\n=== gbsp %s | %s | iwram %s | fb %s | cache de ROM %dMB"
                     " | RAM interna no boot: %dKB livre, maior bloco %dKB"
-                    " | config compilada: dcache %dKB | psram %dMHz | fast_ram %d (%s) | memstats %d | compact_reads %d | sparse_regs %d | cpu_rodata_dram %d" RENDER_CORE1_FMT " ===\n",
+                    " | config compilada: dcache %dKB | psram %dMHz | fast_ram %d (%s) | memstats %d | compact_reads %d | sparse_regs %d | cpu_rodata_dram %d" RENDER_CORE1_FMT AUDIO_TRANSITION_FMT " ===\n",
                 app->version ? app->version : "?",
                 app->romPath ? rg_basename(app->romPath) : "?",
                 ((u32)iwram_ptr >> 24) == 0x3c ? "PSRAM" : "interna",
@@ -1119,6 +1127,7 @@ void app_main(void)
             // describes a machine that may no longer exist.
             audio_clock_sync();
             audio_sync_reset();
+            audio_transition_rebaseline();
             continue;
         }
 
@@ -1178,6 +1187,7 @@ void app_main(void)
                 // the next few seconds; the history is fine, only this window is
                 // spoiled.
                 audio_sync_window();
+                audio_transition_rebaseline();
             }
         }
 

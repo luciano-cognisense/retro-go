@@ -173,7 +173,13 @@ static bool driver_set_sample_rates(int sampleRate)
 
 static bool driver_deinit(void)
 {
+#if defined(CONFIG_RG_AUDIO_I2S_TELEMETRY) && CONFIG_RG_AUDIO_I2S_TELEMETRY
+    telemetry_drain_events();
+#endif
     i2s_driver_uninstall(I2S_NUM_0);
+#if defined(CONFIG_RG_AUDIO_I2S_TELEMETRY) && CONFIG_RG_AUDIO_I2S_TELEMETRY
+    telemetry_event_queue = NULL;
+#endif
     if (state.device == 0)
     {
     #if RG_AUDIO_USE_INT_DAC
