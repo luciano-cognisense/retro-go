@@ -25,6 +25,7 @@ extern "C" {
   #include "ram_store.h"
   #include "read_path.h"
   #include "register_list.h"
+  #include "thumb_handler_profile.h"
 }
 
 /* Every access to the emulated PC goes through PCR (read) and PCW (write).
@@ -34,6 +35,10 @@ extern "C" {
 #define PCR (reg[REG_PC])
 #define PCW(x) (reg[REG_PC] = (x))
 #define PC_RELOAD() ((void)0)
+
+#if GBSP_THUMB_HANDLER_PROFILE_ACTIVE
+gbsp_thumb_handler_profile_t gbsp_thumb_handler_profile;
+#endif
 
 const u8 bit_count[256] =
 {
@@ -3187,6 +3192,7 @@ thumb_loop_pc:
        interp_trace_instruction(PCR, 0);
        #endif
 
+       GBSP_THUMB_HANDLER_ISSUED(opcode);
        switch((opcode >> 8) & 0xFF)
        {
           case 0x00 ... 0x07:

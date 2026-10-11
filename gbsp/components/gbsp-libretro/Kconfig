@@ -173,6 +173,14 @@ menu "gpSP experiments"
             the crystal-fed systimer) once per overclock change. No effect at
             oc 0. Measured on hardware (oc 2): 32768Hz requested -> 28087Hz
             programmed, ~32768 samples/s consumed, at most 60fps sustained.
+    config GBSP_THUMB_HANDLER_PROFILE
+        bool "Count Thumb handler indices (diagnostic only)"
+        default n
+        help
+            Counts each dispatched Thumb opcode class (opcode bits 15:8) in
+            the existing 300-frame profile windows and writes the 256-bin
+            histogram to the profile log. Adds work to every Thumb instruction;
+            timing from this build is invalid and must not be compared.
     config GBSP_AUDIO_TRANSITION_STATS
         bool "Audio transition and I2S DMA telemetry (diagnostic only)"
         default n

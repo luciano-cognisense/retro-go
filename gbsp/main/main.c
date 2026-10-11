@@ -13,6 +13,7 @@
 #include "../components/gbsp-libretro/read_path.h"
 #include "../components/gbsp-libretro/register_list.h"
 #include "../components/gbsp-libretro/render_async.h"
+#include "../components/gbsp-libretro/thumb_handler_profile.h"
 
 // Profile header field, present only when the option is compiled in, so the
 // header of a build without it stays byte-for-byte what it was.
@@ -22,6 +23,12 @@
 #else
 #define RENDER_CORE1_FMT ""
 #define RENDER_CORE1_ARG
+#endif
+
+#if GBSP_THUMB_HANDLER_PROFILE_ACTIVE
+#define THUMB_HANDLER_PROFILE_FMT " | thumb_handler_profile 1 | timing INVALIDO"
+#else
+#define THUMB_HANDLER_PROFILE_FMT ""
 #endif
 
 #if defined(CONFIG_GBSP_CPU_RODATA_DRAM) && CONFIG_GBSP_CPU_RODATA_DRAM
@@ -563,6 +570,7 @@ static void profile_reset_window(void)
     gbsp_scanline_count = 0;
     gbsp_update_ticks = 0;
     gbsp_memory_profile_reset();
+    gbsp_thumb_handler_profile_reset();
     // Snapshot rather than reset: this one is written by the display task on the
     // OTHER core. Resetting it from here would race with that task and lose
     // counts, so it is left strictly monotonic -- core 1 only ever adds, we only
@@ -606,7 +614,7 @@ static void profile_flush(void)
         // 0x3fc.../0x3fd... is internal SRAM on the S3, 0x3c... is PSRAM.
         fprintf(fp, "\n=== gbsp %s | %s | iwram %s | fb %s | cache de ROM %dMB"
                     " | RAM interna no boot: %dKB livre, maior bloco %dKB"
-                    " | config compilada: dcache %dKB | psram %dMHz | fast_ram %d (%s) | memstats %d | compact_reads %d | sparse_regs %d | cpu_rodata_dram %d" RENDER_CORE1_FMT AUDIO_TRANSITION_FMT AUDIO_LIVE_RATE_FMT " ===\n",
+                    " | config compilada: dcache %dKB | psram %dMHz | fast_ram %d (%s) | memstats %d | compact_reads %d | sparse_regs %d | cpu_rodata_dram %d" RENDER_CORE1_FMT AUDIO_TRANSITION_FMT AUDIO_LIVE_RATE_FMT THUMB_HANDLER_PROFILE_FMT " ===\n",
                 app->version ? app->version : "?",
                 app->romPath ? rg_basename(app->romPath) : "?",
                 ((u32)iwram_ptr >> 24) == 0x3c ? "PSRAM" : "interna",
@@ -730,6 +738,7 @@ static void profile_flush(void)
 #endif
     }
 #endif
+    gbsp_thumb_handler_profile_write(fp, (unsigned)profile.frames);
     fclose(fp);
     profile_reset_window();
 }
