@@ -180,9 +180,13 @@ menu "gpSP experiments"
             Places ws_cyc_seq and ws_cyc_nseq in one contiguous object. On
             Thumb, GCC keeps the common base in a register across the dispatch
             tails. A 985-million-instruction hardware histogram predicts about
-            1.13 fewer Xtensa instructions per Thumb instruction in Fire Red
-            and 1.05 in Mario. ARM remains effectively neutral, but the
-            execute_arm frame grows from 96 to 112 bytes. Experimental.
+            1.15 fewer Xtensa instructions per Thumb instruction in Fire Red
+            and 1.17 in Mario. ARM pays a small instruction/stack tradeoff, and
+            the execute_arm frame grows from 96 to 112 bytes. Measured on the
+            target hardware with performance profile v7 (oc 0, frameskip 0):
+            stable CPU-side time fell 1.21% in Fire Red and 1.07% in Mario,
+            with save/load and normal play working in both games. Enabled only
+            by performance profile v8.
     config GBSP_AUDIO_TRANSITION_STATS
         bool "Audio transition and I2S DMA telemetry (diagnostic only)"
         default n
