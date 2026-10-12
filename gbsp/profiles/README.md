@@ -213,3 +213,31 @@ transition telemetry remains disabled in this profile.
   underruns stayed essentially unchanged. The sound was judged more natural.
 
 The option keeps `default n`; only this profile turns it on.
+
+## performance-v8
+
+```sh
+gbsp/profiles/build-performance-v8.sh
+```
+
+Same mechanism and checks as v7. The profile is v7 plus one option:
+
+- `CONFIG_GBSP_WAITSTATE_COMMON_BASE`: stores the sequential and
+  non-sequential waitstate tables in one contiguous object. GCC then keeps a
+  common base across the Thumb dispatch tails, removing about one stack access
+  and 1.15 Xtensa instructions per measured Thumb instruction. The ARM path
+  has a small instruction/stack tradeoff. In the final build, the
+  `execute_arm` frame grows from 96 to 112 B and IRAM grows by 88 B; DRAM is
+  unchanged.
+
+Everything in v7 stays as it was, including live I2S rate changes and ROM-cache
+second chance. Diagnostic telemetry remains disabled.
+
+- Overclock and frameskip remain configurable in the menus.
+- **Cheats are unavailable**, as in v1-v7 (`NO_CHEAT_HOOK`).
+- Measured on the target hardware (oc 0, frameskip 0), in stable scenes:
+  CPU-side time fell 1.21% in Pokémon Fire Red and 1.07% in Mario. Emulation
+  time fell 0.97% and 0.60%, respectively. Save/load and normal play worked in
+  both games, with no panic or watchdog.
+
+The option keeps `default n`; only this profile turns it on.
