@@ -19,6 +19,7 @@ static unsigned mode_calls, event_count; static u32 mode_trace[4];
 struct Event {u32 address,value,write;}; static Event events[16];
 #define CPU_ALERT_NONE 0
 #define REG_PC 15
+#define PCR (reg[REG_PC])
 #define REG_LR 14
 #define REG_CPSR 16
 #define MODE_USER 0

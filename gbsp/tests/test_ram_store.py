@@ -44,6 +44,8 @@ static u8 expectedE[sizeof ewram], expectedI[sizeof iwram];
 static int cpu_alert, cycles_remaining, calls, evaluations, stats;
 static u32 seenAddress, seenValue; static int seenSize;
 static u8 ws_cyc_nseq[16][2], ws_cyc_seq[16][2];
+#define WS_NSEQ(r,m) (ws_cyc_nseq[(r)][(m)])
+#define WS_SEQ(r,m) (ws_cyc_seq[(r)][(m)])
 #define STATS_MEMORY_ACCESS(op,type,region) (++stats)
 #define aligned_address_mask8 0xF0000000
 #define aligned_address_mask16 0xF0000001

@@ -21,6 +21,7 @@ using s8=int8_t; using s16=int16_t;
 alignas(4) static u8 data[0x10000];
 static u8 *memory_map_read[8192];
 static u8 ws_cyc_nseq[16][2];
+#define WS_NSEQ(r,m) (ws_cyc_nseq[(r)][(m)])
 static u32 reg[16], seen, lastRegion, typeId;
 static int cycles_remaining, calls, stats, evaluations;
 #define REG_PC 15
