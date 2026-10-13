@@ -1,0 +1,13 @@
+_start=0x08000000
+loop=0x08000020
+w_strh=0x08000078
+w_str=0x08000080
+w_strb=0x08000088
+w_done=0x08000094
+wait_end=0x080000cc
+idle_wait=0x080000d8
+work_arm=0x080000f4
+wa1=0x080000fc
+work_thumb=0x08000144
+wt1=0x0800014a
+table=0x08000164

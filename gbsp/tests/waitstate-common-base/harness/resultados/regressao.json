@@ -1,0 +1,398 @@
+[
+ {
+  "cenario": "waitcnt-1.gba:normal",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=3370813 alertas=75 halt=75 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "waitcnt-1.gba:sem-idle",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=10556346 alertas=75 halt=75 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "waitcnt-1.gba:save-load",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=3370813 alertas=75 halt=75 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "waitcnt-1.gba:reset",
+  "igual": true,
+  "final": "FINAL quadros=277 instr=3368178 alertas=75 halt=75 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "waitcnt-0x2B.gba:normal",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=3343078 alertas=75 halt=75 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "waitcnt-0x2B.gba:sem-idle",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=10472754 alertas=75 halt=75 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "waitcnt-0x2B.gba:save-load",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=3343078 alertas=75 halt=75 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "waitcnt-0x2B.gba:reset",
+  "igual": true,
+  "final": "FINAL quadros=277 instr=3336425 alertas=75 halt=75 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "waitcnt-0x9D.gba:normal",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=3335729 alertas=75 halt=75 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "waitcnt-0x9D.gba:sem-idle",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=10394075 alertas=75 halt=75 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "waitcnt-0x9D.gba:save-load",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=3335729 alertas=75 halt=75 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "waitcnt-0x9D.gba:reset",
+  "igual": true,
+  "final": "FINAL quadros=277 instr=3341217 alertas=75 halt=75 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "alert-1.gba:normal",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=6040875 alertas=228 halt=152 irq=114",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "alert-1.gba:sem-idle",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=6786801 alertas=228 halt=152 irq=114",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "alert-1.gba:save-load",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=6040875 alertas=228 halt=152 irq=114",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "alert-1.gba:reset",
+  "igual": true,
+  "final": "FINAL quadros=277 instr=6049045 alertas=228 halt=152 irq=114",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "alert-0x2B.gba:normal",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=6041357 alertas=228 halt=152 irq=114",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "alert-0x2B.gba:sem-idle",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=6787286 alertas=228 halt=152 irq=114",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "alert-0x2B.gba:save-load",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=6041357 alertas=228 halt=152 irq=114",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "alert-0x2B.gba:reset",
+  "igual": true,
+  "final": "FINAL quadros=277 instr=6049622 alertas=228 halt=152 irq=114",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "stress-1.gba:normal",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=11057244 alertas=0 halt=0 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "stress-1.gba:save-load",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=11057244 alertas=0 halt=0 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "stress-1.gba:reset",
+  "igual": true,
+  "final": "FINAL quadros=277 instr=11057247 alertas=0 halt=0 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "stress-0x11.gba:normal",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=11057291 alertas=0 halt=0 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "stress-0x11.gba:save-load",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=11057291 alertas=0 halt=0 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "stress-0x11.gba:reset",
+  "igual": true,
+  "final": "FINAL quadros=277 instr=11057281 alertas=0 halt=0 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "stress-0x5F.gba:normal",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=11057267 alertas=0 halt=0 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "stress-0x5F.gba:save-load",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=11057267 alertas=0 halt=0 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "stress-0x5F.gba:reset",
+  "igual": true,
+  "final": "FINAL quadros=277 instr=11057256 alertas=0 halt=0 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "stress-0xE7.gba:normal",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=11057319 alertas=0 halt=0 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "stress-0xE7.gba:save-load",
+  "igual": true,
+  "final": "FINAL quadros=300 instr=11057319 alertas=0 halt=0 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "stress-0xE7.gba:reset",
+  "igual": true,
+  "final": "FINAL quadros=277 instr=11057364 alertas=0 halt=0 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ },
+ {
+  "cenario": "waitcnt-1.gba:longo",
+  "igual": true,
+  "final": "FINAL quadros=6000 instr=66621964 alertas=1500 halt=1500 irq=0",
+  "rc": [
+   0,
+   0
+  ],
+  "asan": false,
+  "ub_base": [],
+  "ub_fix": []
+ }
+]

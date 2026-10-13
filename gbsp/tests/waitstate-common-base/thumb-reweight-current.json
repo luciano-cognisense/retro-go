@@ -1,0 +1,28 @@
+{
+  "source_profile": "/Users/lucianocaminhajunior/HandsOnLab/outputs/gbsp-thumb-handler-profile/console-analysis.json",
+  "source_assembly": "/Users/lucianocaminhajunior/HandsOnLab/outputs/gbsp-waitstate-common-base/assembly-analysis.json",
+  "games": {
+    "1636 - Pokemon Fire Red (U)(Squirrels).gba": {
+      "total": 624073079,
+      "modeled": 623978378,
+      "coverage_percent": 99.98482533485473,
+      "n2_delta_per_thumb_instruction": {
+        "instr": -1.1485448266606444,
+        "saltos": 0.0769624536573285,
+        "pilha": -0.9769332632227843,
+        "l32r": -0.22355110356083524
+      }
+    },
+    "Super Mario Advance 2 - Super Mario World (USA, Australia).gba": {
+      "total": 361465615,
+      "modeled": 361187395,
+      "coverage_percent": 99.92303002320152,
+      "n2_delta_per_thumb_instruction": {
+        "instr": -1.1691668032878058,
+        "saltos": 0.11211859428261609,
+        "pilha": -0.9508626235419982,
+        "l32r": -0.2309194621811207
+      }
+    }
+  }
+}

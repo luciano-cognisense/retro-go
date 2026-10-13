@@ -1,0 +1,492 @@
+[
+ {
+  "rom": "waitcnt-1.gba",
+  "N": 3,
+  "M": 4,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "waitcnt-1.gba",
+  "N": 5,
+  "M": 9,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "waitcnt-1.gba",
+  "N": 10,
+  "M": 11,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "waitcnt-1.gba",
+  "N": 12,
+  "M": 30,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "waitcnt-1.gba",
+  "N": 7,
+  "M": 23,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "waitcnt-1.gba",
+  "N": 20,
+  "M": 21,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "waitcnt-1.gba",
+  "N": 33,
+  "M": 34,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "waitcnt-0x2B.gba",
+  "N": 3,
+  "M": 4,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "waitcnt-0x2B.gba",
+  "N": 5,
+  "M": 9,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "waitcnt-0x2B.gba",
+  "N": 10,
+  "M": 11,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "waitcnt-0x2B.gba",
+  "N": 12,
+  "M": 30,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "waitcnt-0x2B.gba",
+  "N": 7,
+  "M": 23,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "waitcnt-0x2B.gba",
+  "N": 20,
+  "M": 21,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "waitcnt-0x2B.gba",
+  "N": 33,
+  "M": 34,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "waitcnt-0x9D.gba",
+  "N": 3,
+  "M": 4,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "waitcnt-0x9D.gba",
+  "N": 5,
+  "M": 9,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "waitcnt-0x9D.gba",
+  "N": 10,
+  "M": 11,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "waitcnt-0x9D.gba",
+  "N": 12,
+  "M": 30,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "waitcnt-0x9D.gba",
+  "N": 7,
+  "M": 23,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "waitcnt-0x9D.gba",
+  "N": 20,
+  "M": 21,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "waitcnt-0x9D.gba",
+  "N": 33,
+  "M": 34,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "alert-1.gba",
+  "N": 3,
+  "M": 4,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "alert-1.gba",
+  "N": 5,
+  "M": 9,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "alert-1.gba",
+  "N": 10,
+  "M": 11,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "alert-1.gba",
+  "N": 12,
+  "M": 30,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "alert-1.gba",
+  "N": 7,
+  "M": 23,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "alert-1.gba",
+  "N": 20,
+  "M": 21,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "alert-1.gba",
+  "N": 33,
+  "M": 34,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "stress-1.gba",
+  "N": 3,
+  "M": 4,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "stress-1.gba",
+  "N": 5,
+  "M": 9,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "stress-1.gba",
+  "N": 10,
+  "M": 11,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "stress-1.gba",
+  "N": 12,
+  "M": 30,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "stress-1.gba",
+  "N": 7,
+  "M": 23,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "stress-1.gba",
+  "N": 20,
+  "M": 21,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ },
+ {
+  "rom": "stress-1.gba",
+  "N": 33,
+  "M": 34,
+  "rc": [
+   0,
+   0
+  ],
+  "quadros": [
+   40,
+   40
+  ],
+  "igual": true
+ }
+]

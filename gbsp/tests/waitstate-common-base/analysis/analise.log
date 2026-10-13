@@ -1,0 +1,2 @@
+base frame 96 slots_base {'0': 'seq'} iram 50230 Mario: instr 49.40 saltos 6.57 pilha 1.63 seq 1.01 nseq 0.11 comum 0.00 FireRed: instr 50.00 saltos 6.19 pilha 1.81 seq 1.00 nseq 0.11 comum 0.00 | Thumb instr 46.01 pilha 2.37 seq 1.01 nseq 0.31 comum 0.00
+n2 frame 112 slots_base {'0': 'seq'} iram 50322 Mario: instr 49.56 saltos 6.42 pilha 1.74 seq 1.12 nseq 0.00 comum 0.00 FireRed: instr 50.17 saltos 6.01 pilha 1.93 seq 1.11 nseq 0.00 comum 0.00 | Thumb instr 44.96 pilha 1.63 seq 0.00 nseq 0.00 comum 0.00

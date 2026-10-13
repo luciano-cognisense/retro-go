@@ -1,0 +1,36 @@
+waitcnt-1.gba      N= 3 M= 4 IGUAL
+waitcnt-1.gba      N= 5 M= 9 IGUAL
+waitcnt-1.gba      N=10 M=11 IGUAL
+waitcnt-1.gba      N=12 M=30 IGUAL
+waitcnt-1.gba      N= 7 M=23 IGUAL
+waitcnt-1.gba      N=20 M=21 IGUAL
+waitcnt-1.gba      N=33 M=34 IGUAL
+waitcnt-0x2B.gba   N= 3 M= 4 IGUAL
+waitcnt-0x2B.gba   N= 5 M= 9 IGUAL
+waitcnt-0x2B.gba   N=10 M=11 IGUAL
+waitcnt-0x2B.gba   N=12 M=30 IGUAL
+waitcnt-0x2B.gba   N= 7 M=23 IGUAL
+waitcnt-0x2B.gba   N=20 M=21 IGUAL
+waitcnt-0x2B.gba   N=33 M=34 IGUAL
+waitcnt-0x9D.gba   N= 3 M= 4 IGUAL
+waitcnt-0x9D.gba   N= 5 M= 9 IGUAL
+waitcnt-0x9D.gba   N=10 M=11 IGUAL
+waitcnt-0x9D.gba   N=12 M=30 IGUAL
+waitcnt-0x9D.gba   N= 7 M=23 IGUAL
+waitcnt-0x9D.gba   N=20 M=21 IGUAL
+waitcnt-0x9D.gba   N=33 M=34 IGUAL
+alert-1.gba        N= 3 M= 4 IGUAL
+alert-1.gba        N= 5 M= 9 IGUAL
+alert-1.gba        N=10 M=11 IGUAL
+alert-1.gba        N=12 M=30 IGUAL
+alert-1.gba        N= 7 M=23 IGUAL
+alert-1.gba        N=20 M=21 IGUAL
+alert-1.gba        N=33 M=34 IGUAL
+stress-1.gba       N= 3 M= 4 IGUAL
+stress-1.gba       N= 5 M= 9 IGUAL
+stress-1.gba       N=10 M=11 IGUAL
+stress-1.gba       N=12 M=30 IGUAL
+stress-1.gba       N= 7 M=23 IGUAL
+stress-1.gba       N=20 M=21 IGUAL
+stress-1.gba       N=33 M=34 IGUAL
+base iguais 35 de 35
