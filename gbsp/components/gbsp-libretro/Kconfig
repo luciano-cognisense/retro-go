@@ -187,6 +187,15 @@ menu "gpSP experiments"
             stable CPU-side time fell 1.21% in Fire Red and 1.07% in Mario,
             with save/load and normal play working in both games. Enabled only
             by performance profile v8.
+    config GBSP_ARM_AL_FASTPATH
+        bool "Test the ARM AL condition before the condition jump table"
+        default n
+        help
+            execute_arm() decodes the condition of every ARM instruction with a
+            16-way switch (a jump table on Xtensa). With this option, AL (always,
+            about 77% of ARM instructions in Fire Red and 81% in Mario) is tested
+            first with a single compare, and only the other conditions go
+            through the switch. No change in behavior.
     config GBSP_AUDIO_TRANSITION_STATS
         bool "Audio transition and I2S DMA telemetry (diagnostic only)"
         default n
