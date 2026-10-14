@@ -1579,11 +1579,6 @@ arm_loop:
 #endif
        condition = opcode >> 28;
 
-#ifdef CONFIG_GBSP_ARM_AL_FASTPATH
-       /* Most ARM instructions are AL (about 77% in Fire Red, 81% in Mario):
-        * test it with one compare and keep the jump table for the rest. */
-       if (__builtin_expect(condition != 0xE, 0))
-#endif
        switch(condition)
        {
           case 0x0:
