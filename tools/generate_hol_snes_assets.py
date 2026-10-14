@@ -28,6 +28,13 @@ ASSETS = {
     "carousel_recent.png": (128, 88),
     "carousel_favorite.png": (128, 88),
     "carousel_clock.png": (128, 88),
+    "carousel_side_8bit.png": (88, 60),
+    "carousel_side_16bit.png": (88, 60),
+    "carousel_side_portable_vertical.png": (88, 60),
+    "carousel_side_portable_horizontal.png": (88, 60),
+    "carousel_side_recent.png": (88, 60),
+    "carousel_side_favorite.png": (88, 60),
+    "carousel_side_clock.png": (88, 60),
 }
 
 
