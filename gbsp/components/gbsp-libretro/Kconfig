@@ -159,6 +159,23 @@ menu "gpSP experiments"
             faults and ROM read time -40%, cost per fault unchanged (~58 ms);
             Mario fits the cache and has no faults. BSS +128 B, flash +88 B,
             IRAM unchanged. Enabled only by that profile.
+    config GBSP_ROM_BOUNCE_READ
+        bool "Read ROM pages through an internal DMA-capable buffer"
+        default n
+        help
+            The ROM cache lives in PSRAM, and on the ESP32-S3 the SD/MMC layer
+            cannot DMA into PSRAM: sdmmc_read_sectors() then splits every read
+            into single 512-byte block commands. With this option the ROM file
+            is read with read() into a buffer in internal RAM
+            (GBSP_ROM_BOUNCE_KB) and copied to PSRAM, so each chunk is one
+            multi-block command. Applies to page faults and to the initial
+            load of the cache. Falls back to the stdio path when the buffer
+            cannot be allocated.
+    config GBSP_ROM_BOUNCE_KB
+        int "ROM bounce buffer size (KB)"
+        depends on GBSP_ROM_BOUNCE_READ
+        range 1 32
+        default 8
     config GBSP_AUDIO_CLOCK_COMP
         bool "Compensate the I2S clock for the retro-go overclock (ESP32-S3)"
         default n

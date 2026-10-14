@@ -441,6 +441,46 @@ static inline u32 gamepak_rb_take(unsigned idx)
 // a lot.
 FILE *gamepak_file_large = NULL;
 
+#ifdef CONFIG_GBSP_ROM_BOUNCE_READ
+#include <unistd.h>
+#include <esp_heap_caps.h>
+// See CONFIG_GBSP_ROM_BOUNCE_READ: reads into PSRAM go one 512-byte block per
+// SD command, reads into this buffer go as one multi-block command.
+#define GAMEPAK_BOUNCE_SIZE (CONFIG_GBSP_ROM_BOUNCE_KB * 1024)
+static u8 *gamepak_bounce = NULL;
+
+int gamepak_bounce_kb(void)
+{
+  return gamepak_bounce ? CONFIG_GBSP_ROM_BOUNCE_KB : 0;
+}
+
+// Reads len bytes at offset of the ROM file into dst. Once the file is open,
+// all reads go through the file descriptor, so stdio buffering never holds
+// stale data or a stale position.
+static void gamepak_read(u8 *dst, u32 offset, u32 len)
+{
+  if (!gamepak_bounce)
+  {
+    fseek(gamepak_file_large, offset, SEEK_SET);
+    fread(dst, len, 1, gamepak_file_large);
+    return;
+  }
+
+  int fd = fileno(gamepak_file_large);
+  if (lseek(fd, offset, SEEK_SET) < 0)
+    return;
+  while (len)
+  {
+    ssize_t n = read(fd, gamepak_bounce, len < GAMEPAK_BOUNCE_SIZE ? len : GAMEPAK_BOUNCE_SIZE);
+    if (n <= 0)
+      break;
+    memcpy(dst, gamepak_bounce, n);
+    dst += n;
+    len -= n;
+  }
+}
+#endif
+
 // Writes to these respective locations should trigger an update
 // so the related subsystem may react to it.
 
@@ -2310,8 +2350,12 @@ u8 *load_gamepak_page(u32 physical_index)
   // Fill in the entry
   gamepak_blk_queue[entry].phy_rom = physical_index;
 
+#ifdef CONFIG_GBSP_ROM_BOUNCE_READ
+  gamepak_read(swap_location, physical_index * (32 * 1024), 32 * 1024);
+#else
   fseek(gamepak_file_large, physical_index * (32 * 1024), SEEK_SET);
   fread(swap_location, (32 * 1024), 1, gamepak_file_large);
+#endif
 
   // Map it to the read handlers now
   map_rom_entry(read, physical_index, swap_location, gamepak_size >> 15);
@@ -2331,6 +2375,10 @@ u8 *load_gamepak_page(u32 physical_index)
 void init_gamepak_buffer(void)
 {
   unsigned i;
+#ifdef CONFIG_GBSP_ROM_BOUNCE_READ
+  if (!gamepak_bounce)
+    gamepak_bounce = heap_caps_malloc(GAMEPAK_BOUNCE_SIZE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+#endif
   // Try to allocate up to 32 blocks of 1MB each
   gamepak_buffer_count = 0;
   while (gamepak_buffer_count < ROM_BUFFER_SIZE)
@@ -2437,6 +2485,10 @@ void memory_term(void)
   {
     free(gamepak_buffers[--gamepak_buffer_count]);
   }
+#ifdef CONFIG_GBSP_ROM_BOUNCE_READ
+  heap_caps_free(gamepak_bounce);
+  gamepak_bounce = NULL;
+#endif
 }
 
 bool memory_check_savestate(const u8 *src)
@@ -2667,7 +2719,11 @@ static s32 load_gamepak_raw(const char *name)
     for (i = 0; i < ldblks; i++)
     {
       // Load 1MB chunk and map it
+#ifdef CONFIG_GBSP_ROM_BOUNCE_READ
+      gamepak_read(gamepak_buffers[i], i * gamepak_buffer_blocksize, gamepak_buffer_blocksize);
+#else
       fread(gamepak_buffers[i], gamepak_buffer_blocksize, 1, gamepak_file_large);
+#endif
       for (j = 0; j < 32 && i*32 + j < rom_blocks; j++)
       {
         u32 phyn = i*32 + j;

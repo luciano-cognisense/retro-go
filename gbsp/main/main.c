@@ -81,6 +81,17 @@ static int64_t autoSaveSRAM_Timer = 0;
 static u32 lastBackupWrites = 0;
 static int sramSaveCount = 0;
 
+#ifdef CONFIG_GBSP_ROM_BOUNCE_READ
+extern int gamepak_bounce_kb(void);
+#define ROM_BOUNCE_FMT " | rom_bounce %dKB"
+#define ROM_BOUNCE_ARG , gamepak_bounce_kb()
+#else
+#define ROM_BOUNCE_FMT ""
+#define ROM_BOUNCE_ARG
+#endif
+// Time load_gamepak() took at boot: reads the first cache blocks of the ROM.
+static int romLoadMs = -1;
+
 // Reserved at boot, before init_gamepak_buffer() eats the heap. See app_main().
 static void *stateBuffer = NULL;
 
@@ -606,13 +617,15 @@ static void profile_flush(void)
         // 0x3fc.../0x3fd... is internal SRAM on the S3, 0x3c... is PSRAM.
         fprintf(fp, "\n=== gbsp %s | %s | iwram %s | fb %s | cache de ROM %dMB"
                     " | RAM interna no boot: %dKB livre, maior bloco %dKB"
-                    " | config compilada: dcache %dKB | psram %dMHz | fast_ram %d (%s) | memstats %d | compact_reads %d | sparse_regs %d | cpu_rodata_dram %d" RENDER_CORE1_FMT AUDIO_TRANSITION_FMT AUDIO_LIVE_RATE_FMT " ===\n",
+                    " | config compilada: dcache %dKB | psram %dMHz | fast_ram %d (%s) | memstats %d | compact_reads %d | sparse_regs %d | cpu_rodata_dram %d" RENDER_CORE1_FMT AUDIO_TRANSITION_FMT AUDIO_LIVE_RATE_FMT
+                    " | carga da ROM %d ms" ROM_BOUNCE_FMT " ===\n",
                 app->version ? app->version : "?",
                 app->romPath ? rg_basename(app->romPath) : "?",
                 ((u32)iwram_ptr >> 24) == 0x3c ? "PSRAM" : "interna",
                 ((u32)currentUpdate->data >> 24) == 0x3c ? "PSRAM" : "interna",
                 (int)gamepak_buffer_count, internalFreeKB, internalBlockKB,
-                (int)RG_DCACHE_KB, (int)RG_PSRAM_MHZ, GBSP_FAST_RAM_WRITES_ACTIVE, GBSP_FAST_RAM_WRITES_IMPL, GBSP_MEMORY_PROFILE_ACTIVE, GBSP_COMPACT_READS_ACTIVE, GBSP_SPARSE_REGISTERS_ACTIVE, GBSP_CPU_RODATA_DRAM_ACTIVE RENDER_CORE1_ARG);
+                (int)RG_DCACHE_KB, (int)RG_PSRAM_MHZ, GBSP_FAST_RAM_WRITES_ACTIVE, GBSP_FAST_RAM_WRITES_IMPL, GBSP_MEMORY_PROFILE_ACTIVE, GBSP_COMPACT_READS_ACTIVE, GBSP_SPARSE_REGISTERS_ACTIVE, GBSP_CPU_RODATA_DRAM_ACTIVE RENDER_CORE1_ARG,
+                romLoadMs ROM_BOUNCE_ARG);
         profileHeaderWritten = true;
     }
 
@@ -1076,10 +1089,12 @@ void app_main(void)
     // load_bios(RG_BASE_PATH_BIOS "/gba_bios.bin");
 
     memset(gamepak_backup, 0xff, sizeof(gamepak_backup));
+    const int64_t romLoadStart = rg_system_timer();
     if (load_gamepak(NULL, app->romPath, FEAT_DISABLE, FEAT_DISABLE, SERIAL_MODE_DISABLED) != 0)
     {
         RG_PANIC("Could not load the game file.");
     }
+    romLoadMs = (int)((rg_system_timer() - romLoadStart) / 1000);
 
     RG_LOGI("reset_gba");
     reset_gba();
