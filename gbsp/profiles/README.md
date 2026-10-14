@@ -241,3 +241,33 @@ second chance. Diagnostic telemetry remains disabled.
   both games, with no panic or watchdog.
 
 The option keeps `default n`; only this profile turns it on.
+
+## performance-v9
+
+```sh
+gbsp/profiles/build-performance-v9.sh
+```
+
+Same mechanism and checks as v8. The profile is v8 plus one option:
+
+- `CONFIG_GBSP_ROM_BOUNCE_READ` (8 KB buffer, `CONFIG_GBSP_ROM_BOUNCE_KB`):
+  the ROM page cache lives in PSRAM, and on the ESP32-S3 the SD/MMC layer
+  cannot DMA into PSRAM, so `sdmmc_read_sectors()` split every 32 KB page into
+  64 single-block commands. The ROM file is now read with `read()` into an
+  internal DMA-capable buffer and copied to PSRAM, one multi-block command per
+  8 KB. This covers page faults and the initial load of the cache. Without the
+  buffer (allocation failure) the stdio path is used as before. The CPU loop is
+  unchanged (`execute_arm` identical to v8); 8 KB of internal RAM.
+
+Everything in v8 stays as it was. The profile log header now also records the
+boot ROM load time and the bounce buffer size (in every build, option or not).
+
+- Overclock and frameskip remain configurable in the menus.
+- **Cheats are unavailable**, as in v1-v8 (`NO_CHEAT_HOOK`).
+- Measured on the target hardware (oc 0, frameskip 0, Pokémon Fire Red with map
+  transitions, buildings and battles): cost per ROM page fault 58.3 -> 22.8 ms
+  (40 and 36 faults, every window between 22.5 and 23.4 ms), ROM read time per
+  fault -61%; boot load of the 6 MB cache 10.9 -> 4.3 s. The game ran through
+  both collections; save/load was not checked separately.
+
+The option keeps `default n`; only this profile turns it on.

@@ -170,7 +170,11 @@ menu "gpSP experiments"
             (GBSP_ROM_BOUNCE_KB) and copied to PSRAM, so each chunk is one
             multi-block command. Applies to page faults and to the initial
             load of the cache. Falls back to the stdio path when the buffer
-            cannot be allocated.
+            cannot be allocated. Measured on the target hardware with
+            performance profile v8 (oc 0, frameskip 0, Fire Red): cost per page
+            fault 58.3 -> 22.8 ms, boot load of the 6 MB cache 10.9 -> 4.3 s;
+            execute_arm unchanged, 8 KB of internal RAM. Enabled only by
+            performance profile v9.
     config GBSP_ROM_BOUNCE_KB
         int "ROM bounce buffer size (KB)"
         depends on GBSP_ROM_BOUNCE_READ
