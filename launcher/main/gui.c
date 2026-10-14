@@ -23,6 +23,7 @@ static rg_image_t *systems_background;
 static rg_image_t *button_a;
 static rg_image_t *button_b;
 static rg_image_t *carousel_images[7];
+static rg_image_t *carousel_side_images[7];
 
 #define SETTING_SELECTED_TAB    "SelectedTab"
 #define SETTING_START_SCREEN    "StartScreen"
@@ -38,6 +39,38 @@ static int max_visible_lines(const tab_t *tab, int *_line_height)
     int line_height = TEXT_RECT("ABC123", 0).height;
     if (_line_height) *_line_height = line_height;
     return (ACTIONS_TOP - (HEADER_HEIGHT + 6) - (tab->navpath ? line_height : 0)) / line_height;
+}
+
+static rg_color_t gui_get_content_foreground(const tab_t *tab)
+{
+    if (!tab || !tab->background || !tab->background->data)
+        return C_HANDS_ON_LAB_FOREGROUND;
+
+    static const int sample_x[] = {8, 80};
+    static const int sample_y[] = {72, 108, 144, 180};
+    int luminance = 0;
+    int samples = 0;
+
+    for (int xi = 0; xi < RG_COUNT(sample_x); ++xi)
+    {
+        for (int yi = 0; yi < RG_COUNT(sample_y); ++yi)
+        {
+            int x = RG_MIN(sample_x[xi], tab->background->width - 1);
+            int y = RG_MIN(sample_y[yi], tab->background->height - 1);
+            const uint16_t *line = (const void *)tab->background->data
+                                 + y * tab->background->stride;
+            uint16_t pixel = line[x];
+            int r = ((pixel >> 11) & 0x1F) * 255 / 31;
+            int g = ((pixel >> 5) & 0x3F) * 255 / 63;
+            int b = (pixel & 0x1F) * 255 / 31;
+            luminance += (r * 3 + g * 6 + b) / 10;
+            samples++;
+        }
+    }
+
+    return luminance / samples > 150
+        ? C_HANDS_ON_LAB_BACKGROUND
+        : C_HANDS_ON_LAB_FOREGROUND;
 }
 
 void gui_init(bool cold_boot)
@@ -402,7 +435,7 @@ void gui_redraw(void)
         gui_draw_status(tab);
         gui_draw_list(tab);
         gui_draw_preview(tab);
-        gui_draw_actions();
+        gui_draw_actions(tab);
     }
     else
     {
@@ -471,17 +504,36 @@ void gui_draw_system_selector(void)
         image_types[card] = type;
         if (!carousel_images[type])
             carousel_images[type] = gui_get_image("carousel", image_names[type]);
+        if (!carousel_side_images[type])
+            carousel_side_images[type] = gui_get_image("carousel_side", image_names[type]);
     }
 
     // Neighbor cards intentionally remain partially outside the screen: this
     // makes the horizontal navigation discoverable without animation.
-    rg_gui_draw_rect(0, 64, 50, 108, 3, C_HANDS_ON_LAB_FOREGROUND, C_HANDS_ON_LAB_ACCENT);
-    rg_gui_draw_rect(gui.width - 50, 64, 50, 108, 3,
-                     C_HANDS_ON_LAB_FOREGROUND, C_HANDS_ON_LAB_ACCENT);
-    if (carousel_images[image_types[0]])
-        rg_gui_draw_image(1, 80, 48, 66, true, carousel_images[image_types[0]]);
-    if (carousel_images[image_types[2]])
-        rg_gui_draw_image(gui.width - 49, 80, 48, 66, true, carousel_images[image_types[2]]);
+    rg_gui_draw_rect(0, 64, 50, 108, 0, 0, C_HANDS_ON_LAB_ACCENT);
+    rg_gui_draw_rect(0, 64, 50, 3, 0, 0, C_HANDS_ON_LAB_FOREGROUND);
+    rg_gui_draw_rect(0, 169, 50, 3, 0, 0, C_HANDS_ON_LAB_FOREGROUND);
+    rg_gui_draw_rect(47, 64, 3, 108, 0, 0, C_HANDS_ON_LAB_FOREGROUND);
+    rg_gui_draw_rect(gui.width - 50, 64, 50, 108, 0, 0, C_HANDS_ON_LAB_ACCENT);
+    rg_gui_draw_rect(gui.width - 50, 64, 50, 3, 0, 0, C_HANDS_ON_LAB_FOREGROUND);
+    rg_gui_draw_rect(gui.width - 50, 169, 50, 3, 0, 0, C_HANDS_ON_LAB_FOREGROUND);
+    rg_gui_draw_rect(gui.width - 50, 64, 3, 108, 0, 0, C_HANDS_ON_LAB_FOREGROUND);
+    if (carousel_side_images[image_types[0]])
+    {
+        const rg_image_t *image = carousel_side_images[image_types[0]];
+        const int visible_width = 47;
+        const uint16_t *right_edge = (const uint16_t *)image->data
+                                   + image->width - visible_width;
+        rg_gui_copy_buffer(0, 88, visible_width, image->height,
+                           image->stride, right_edge, true);
+    }
+    if (carousel_side_images[image_types[2]])
+    {
+        const rg_image_t *image = carousel_side_images[image_types[2]];
+        const int visible_width = 47;
+        rg_gui_copy_buffer(gui.width - visible_width, 88, visible_width, image->height,
+                           image->stride, image->data, true);
+    }
 
     rg_gui_draw_rect(72, 38, 176, 148, 4,
                      C_HANDS_ON_LAB_ACCENT, C_HANDS_ON_LAB_ACCENT);
@@ -507,8 +559,13 @@ void gui_draw_system_selector(void)
     else if (strcmp(current->name, "favorite") == 0) label = "FAVORITOS";
     else if (strcmp(current->name, "recent") == 0) label = "RECENTES";
 
-    rg_gui_draw_text(80, 150, 160, label, C_HANDS_ON_LAB_BACKGROUND,
-                     C_TRANSPARENT, RG_TEXT_ALIGN_CENTER | RG_TEXT_BIGGER);
+    rg_gui_draw_rect(81, 143, 158, 34, 1,
+                     C_HANDS_ON_LAB_FOREGROUND, C_HANDS_ON_LAB_BACKGROUND);
+    const int label_flags = RG_TEXT_ALIGN_CENTER | RG_TEXT_NO_PADDING;
+    rg_gui_draw_text(82, 154, 156, label, C_HANDS_ON_LAB_FOREGROUND,
+                     C_TRANSPARENT, label_flags);
+    rg_gui_draw_text(83, 154, 156, label, C_HANDS_ON_LAB_FOREGROUND,
+                     C_TRANSPARENT, label_flags);
     rg_gui_draw_text(54, 104, 18, "<", C_HANDS_ON_LAB_ACCENT,
                      C_TRANSPARENT, RG_TEXT_ALIGN_CENTER | RG_TEXT_BIGGER);
     rg_gui_draw_text(gui.width - 72, 104, 18, ">", C_HANDS_ON_LAB_ACCENT,
@@ -535,6 +592,7 @@ void gui_draw_system_selector(void)
 
 void gui_draw_preview(tab_t *tab)
 {
+    rg_color_t foreground = gui_get_content_foreground(tab);
     if (tab->preview)
     {
         int width = RG_MIN(tab->preview->width, PREVIEW_WIDTH);
@@ -550,7 +608,7 @@ void gui_draw_preview(tab_t *tab)
         int y = HEADER_HEIGHT + (ACTIONS_TOP - HEADER_HEIGHT - height) / 2;
 
         rg_gui_draw_rect(x - 2, y - 2, width + 4, height + 4, 2,
-                         C_HANDS_ON_LAB_FOREGROUND, C_HANDS_ON_LAB_BACKGROUND);
+                         foreground, C_HANDS_ON_LAB_BACKGROUND);
         rg_gui_draw_image(x, y, width, height, true, tab->preview);
     }
 }
@@ -607,6 +665,7 @@ void gui_draw_background(tab_t *tab, int shade)
 
 void gui_draw_header(tab_t *tab, int offset)
 {
+    rg_color_t foreground = gui_get_content_foreground(tab);
     if (!tab->banner)
         tab->banner = gui_get_image("banner", tab->name);
     if (!tab->logo)
@@ -616,7 +675,7 @@ void gui_draw_header(tab_t *tab, int offset)
     if (tab->banner)
         rg_gui_draw_image(LOGO_WIDTH + 1, offset + 8, 0, HEADER_HEIGHT - 8, false, tab->banner);
     else
-        rg_gui_draw_text(LOGO_WIDTH + 8, offset + 8, 0, tab->desc, gui.theme->foreground, C_TRANSPARENT, RG_TEXT_BIGGER);
+        rg_gui_draw_text(LOGO_WIDTH + 8, offset + 8, 0, tab->desc, foreground, C_TRANSPARENT, RG_TEXT_BIGGER);
 }
 
 void gui_draw_tab_indicator(void)
@@ -631,42 +690,45 @@ void gui_draw_tab_indicator(void)
 
 void gui_draw_status(tab_t *tab)
 {
+    rg_color_t foreground = gui_get_content_foreground(tab);
     const int status_x = LOGO_WIDTH + 12;
     const int status_y = HEADER_HEIGHT - 16;
     const int status_width = gui.width - status_x - 88;
     char *txt_left = tab->status[tab->status[1].left[0] ? 1 : 0].left;
     char *txt_right = tab->status[tab->status[1].right[0] ? 1 : 0].right;
 
-    rg_gui_draw_text(status_x, status_y, status_width, txt_right, gui.theme->foreground, C_TRANSPARENT, RG_TEXT_ALIGN_RIGHT);
-    rg_gui_draw_text(status_x, status_y, 0, txt_left, gui.theme->foreground, C_TRANSPARENT, RG_TEXT_ALIGN_LEFT);
+    rg_gui_draw_text(status_x, status_y, status_width, txt_right, foreground, C_TRANSPARENT, RG_TEXT_ALIGN_RIGHT);
+    rg_gui_draw_text(status_x, status_y, 0, txt_left, foreground, C_TRANSPARENT, RG_TEXT_ALIGN_LEFT);
     rg_gui_draw_icons();
 }
 
-void gui_draw_actions(void)
+void gui_draw_actions(tab_t *tab)
 {
     const int button_y = ACTIONS_TOP + 6;
+    rg_color_t foreground = gui_get_content_foreground(tab);
 
     if (!button_a)
         button_a = gui_get_image("button", "a");
     if (!button_b)
         button_b = gui_get_image("button", "b");
 
-    rg_gui_draw_rect(0, ACTIONS_TOP, gui.width, 1, 0, 0, C_HANDS_ON_LAB_FOREGROUND);
+    rg_gui_draw_rect(0, ACTIONS_TOP, gui.width, 1, 0, 0, foreground);
 
     if (button_a)
         rg_gui_draw_image(6, button_y, 18, 18, false, button_a);
-    rg_gui_draw_text(27, button_y + 2, 72, "JOGAR", C_HANDS_ON_LAB_FOREGROUND,
+    rg_gui_draw_text(27, button_y + 2, 72, "JOGAR", foreground,
                      C_TRANSPARENT, RG_TEXT_ALIGN_LEFT);
 
     if (button_b)
         rg_gui_draw_image(gui.width - 92, button_y, 18, 18, false, button_b);
     rg_gui_draw_text(gui.width - 69, button_y + 2, 69, "CONSOLES",
-                     C_HANDS_ON_LAB_FOREGROUND, C_TRANSPARENT, RG_TEXT_ALIGN_LEFT);
+                     foreground, C_TRANSPARENT, RG_TEXT_ALIGN_LEFT);
 }
 
 void gui_draw_list(tab_t *tab)
 {
-    rg_color_t fg[2] = {gui.theme->list.standard_fg, gui.theme->list.selected_fg};
+    rg_color_t foreground = gui_get_content_foreground(tab);
+    rg_color_t fg[2] = {foreground, gui.theme->list.selected_fg};
     rg_color_t bg[2] = {gui.theme->list.standard_bg, gui.theme->list.selected_bg};
 
     const listbox_t *list = &tab->listbox;
@@ -679,7 +741,7 @@ void gui_draw_list(tab_t *tab)
     {
         char buffer[64];
         snprintf(buffer, 63, "[%s]",  tab->navpath);
-        top += rg_gui_draw_text(0, top, list_width, buffer, gui.theme->foreground, C_TRANSPARENT, 0).height;
+        top += rg_gui_draw_text(0, top, list_width, buffer, foreground, C_TRANSPARENT, 0).height;
     }
 
     top += ((ACTIONS_TOP - top) - (lines * line_height)) / 2;
