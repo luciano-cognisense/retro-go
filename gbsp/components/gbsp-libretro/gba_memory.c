@@ -404,6 +404,33 @@ u32 gamepak_buffer_count;   /* Value between 1 and 32 */
 u32 gamepak_size;           /* Size of the ROM in bytes */
 // We allocate in 1MB chunks.
 const unsigned gamepak_buffer_blocksize = 1024*1024;
+#ifdef CONFIG_GBSP_ROM_CACHE_512K_TAIL
+static u8 gamepak_buffer_pages[32];
+static u32 gamepak_cache_pages;
+
+int gamepak_cache_tail_kb(void)
+{
+  return gamepak_buffer_count && gamepak_buffer_pages[gamepak_buffer_count - 1] < 32
+       ? gamepak_buffer_pages[gamepak_buffer_count - 1] * 32 : 0;
+}
+
+int gamepak_cache_kb(void)
+{
+  return gamepak_cache_pages * 32;
+}
+
+static u8 *gamepak_cache_page_ptr(u32 entry)
+{
+  u32 block;
+  for (block = 0; block < gamepak_buffer_count; block++)
+  {
+    if (entry < gamepak_buffer_pages[block])
+      return gamepak_buffers[block] + entry * (32 * 1024);
+    entry -= gamepak_buffer_pages[block];
+  }
+  return gamepak_buffers[0];
+}
+#endif
 
 // LRU queue with the loaded blocks and what they map to
 struct {
@@ -2343,9 +2370,13 @@ u8 *load_gamepak_page(u32 physical_index)
 #endif
 
   u32 entry = evict_gamepak_page();
+#ifdef CONFIG_GBSP_ROM_CACHE_512K_TAIL
+  u8 *swap_location = gamepak_cache_page_ptr(entry);
+#else
   u32 block_idx = entry / 32;
   u32 block_off = entry % 32;
   u8 *swap_location = &gamepak_buffers[block_idx][32 * 1024 * block_off];
+#endif
 
   // Fill in the entry
   gamepak_blk_queue[entry].phy_rom = physical_index;
@@ -2381,13 +2412,32 @@ void init_gamepak_buffer(void)
 #endif
   // Try to allocate up to 32 blocks of 1MB each
   gamepak_buffer_count = 0;
+#ifdef CONFIG_GBSP_ROM_CACHE_512K_TAIL
+  gamepak_cache_pages = 0;
+#endif
   while (gamepak_buffer_count < ROM_BUFFER_SIZE)
   {
     void *ptr = malloc(gamepak_buffer_blocksize);
     if (!ptr)
       break;
     gamepak_buffers[gamepak_buffer_count++] = (u8*)ptr;
+#ifdef CONFIG_GBSP_ROM_CACHE_512K_TAIL
+    gamepak_buffer_pages[gamepak_buffer_count - 1] = 32;
+    gamepak_cache_pages += 32;
+#endif
   }
+#ifdef CONFIG_GBSP_ROM_CACHE_512K_TAIL
+  if (gamepak_buffer_count < ROM_BUFFER_SIZE)
+  {
+    void *ptr = malloc(gamepak_buffer_blocksize / 2);
+    if (ptr)
+    {
+      gamepak_buffers[gamepak_buffer_count] = (u8*)ptr;
+      gamepak_buffer_pages[gamepak_buffer_count++] = 16;
+      gamepak_cache_pages += 16;
+    }
+  }
+#endif
 
   // Initialize the memory map structure
   for (i = 0; i < 1024; i++)
@@ -2397,7 +2447,11 @@ void init_gamepak_buffer(void)
   }
 
   gamepak_lru_head = 0;
+#ifdef CONFIG_GBSP_ROM_CACHE_512K_TAIL
+  gamepak_lru_tail = gamepak_cache_pages - 1;
+#else
   gamepak_lru_tail = 32 * gamepak_buffer_count - 1;
+#endif
 #ifdef CONFIG_GBSP_ROM_SECOND_CHANCE
   memset(gamepak_ref_bit, 0, sizeof(gamepak_ref_bit));
 #endif
@@ -2407,7 +2461,11 @@ bool gamepak_must_swap(void)
 {
   // Returns whether the current gamepak buffer is not big enough to hold
   // the full gamepak ROM. In these cases the device must swap.
+#ifdef CONFIG_GBSP_ROM_CACHE_512K_TAIL
+  return gamepak_cache_pages * (32 * 1024) < gamepak_size;
+#else
   return gamepak_buffer_count * gamepak_buffer_blocksize < gamepak_size;
+#endif
 }
 
 void init_memory(void)
@@ -2698,11 +2756,15 @@ static s32 load_gamepak_raw(const char *name)
     fseek(gamepak_file_large, 0, SEEK_SET);
     gamepak_size = (gamepak_size + 0x7FFF) & ~0x7FFF;
 
-    // Load stuff in 1MB chunks
-    u32 buf_blocks = (gamepak_size + gamepak_buffer_blocksize-1) / (gamepak_buffer_blocksize);
+    // Load stuff in allocated chunks.
     u32 rom_blocks = gamepak_size >> 15;
+#ifdef CONFIG_GBSP_ROM_CACHE_512K_TAIL
+    u32 pages_left = rom_blocks;
+#else
+    u32 buf_blocks = (gamepak_size + gamepak_buffer_blocksize-1) / (gamepak_buffer_blocksize);
     u32 ldblks = buf_blocks < gamepak_buffer_count ?
                     buf_blocks : gamepak_buffer_count;
+#endif
 
     // Unmap the ROM space since we will re-map it now
     map_null(read, 0x8000000, 0xD000000);
@@ -2716,15 +2778,22 @@ static s32 load_gamepak_raw(const char *name)
 #endif
 
     // Proceed to read the whole ROM or as much as possible.
+#ifdef CONFIG_GBSP_ROM_CACHE_512K_TAIL
+    for (i = 0; i < gamepak_buffer_count && pages_left; i++)
+    {
+      const u32 pages = gamepak_buffer_pages[i] < pages_left ? gamepak_buffer_pages[i] : pages_left;
+#else
     for (i = 0; i < ldblks; i++)
     {
+      const u32 pages = 32;
+#endif
       // Load 1MB chunk and map it
 #ifdef CONFIG_GBSP_ROM_BOUNCE_READ
-      gamepak_read(gamepak_buffers[i], i * gamepak_buffer_blocksize, gamepak_buffer_blocksize);
+      gamepak_read(gamepak_buffers[i], i * gamepak_buffer_blocksize, pages * (32 * 1024));
 #else
-      fread(gamepak_buffers[i], gamepak_buffer_blocksize, 1, gamepak_file_large);
+      fread(gamepak_buffers[i], pages * (32 * 1024), 1, gamepak_file_large);
 #endif
-      for (j = 0; j < 32 && i*32 + j < rom_blocks; j++)
+      for (j = 0; j < pages && i*32 + j < rom_blocks; j++)
       {
         u32 phyn = i*32 + j;
         u8* blkptr = &gamepak_buffers[i][32 * 1024 * j];
@@ -2733,6 +2802,9 @@ static s32 load_gamepak_raw(const char *name)
         // Map it to the read handlers now
         map_rom_entry(read, phyn, blkptr, rom_blocks);
       }
+#ifdef CONFIG_GBSP_ROM_CACHE_512K_TAIL
+      pages_left -= pages;
+#endif
     }
 
     return 0;

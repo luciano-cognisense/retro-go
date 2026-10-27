@@ -180,6 +180,15 @@ menu "gpSP experiments"
         depends on GBSP_ROM_BOUNCE_READ
         range 1 32
         default 8
+    config GBSP_ROM_CACHE_512K_TAIL
+        bool "Use a final 512 KB block when a 1 MB ROM-cache allocation fails"
+        default n
+        help
+            After the normal sequence of 1 MB PSRAM allocations stops, try a
+            single 512 KB tail block. This can recover fragmented free PSRAM
+            without changing the 32 KB ROM page size or any cache hit path.
+            Experimental; the option-off object must remain identical and the
+            actual extra allocation must be confirmed on hardware before use.
     config GBSP_AUDIO_CLOCK_COMP
         bool "Compensate the I2S clock for the retro-go overclock (ESP32-S3)"
         default n

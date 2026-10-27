@@ -89,6 +89,16 @@ extern int gamepak_bounce_kb(void);
 #define ROM_BOUNCE_FMT ""
 #define ROM_BOUNCE_ARG
 #endif
+
+#ifdef CONFIG_GBSP_ROM_CACHE_512K_TAIL
+extern int gamepak_cache_tail_kb(void);
+extern int gamepak_cache_kb(void);
+#define ROM_CACHE_TAIL_FMT " | cache de ROM exato %dKB | rom_cache_tail %dKB"
+#define ROM_CACHE_TAIL_ARG , gamepak_cache_kb(), gamepak_cache_tail_kb()
+#else
+#define ROM_CACHE_TAIL_FMT ""
+#define ROM_CACHE_TAIL_ARG
+#endif
 // Time load_gamepak() took at boot: reads the first cache blocks of the ROM.
 static int romLoadMs = -1;
 
@@ -618,14 +628,14 @@ static void profile_flush(void)
         fprintf(fp, "\n=== gbsp %s | %s | iwram %s | fb %s | cache de ROM %dMB"
                     " | RAM interna no boot: %dKB livre, maior bloco %dKB"
                     " | config compilada: dcache %dKB | psram %dMHz | fast_ram %d (%s) | memstats %d | compact_reads %d | sparse_regs %d | cpu_rodata_dram %d" RENDER_CORE1_FMT AUDIO_TRANSITION_FMT AUDIO_LIVE_RATE_FMT
-                    " | carga da ROM %d ms" ROM_BOUNCE_FMT " ===\n",
+                    " | carga da ROM %d ms" ROM_BOUNCE_FMT ROM_CACHE_TAIL_FMT " ===\n",
                 app->version ? app->version : "?",
                 app->romPath ? rg_basename(app->romPath) : "?",
                 ((u32)iwram_ptr >> 24) == 0x3c ? "PSRAM" : "interna",
                 ((u32)currentUpdate->data >> 24) == 0x3c ? "PSRAM" : "interna",
                 (int)gamepak_buffer_count, internalFreeKB, internalBlockKB,
                 (int)RG_DCACHE_KB, (int)RG_PSRAM_MHZ, GBSP_FAST_RAM_WRITES_ACTIVE, GBSP_FAST_RAM_WRITES_IMPL, GBSP_MEMORY_PROFILE_ACTIVE, GBSP_COMPACT_READS_ACTIVE, GBSP_SPARSE_REGISTERS_ACTIVE, GBSP_CPU_RODATA_DRAM_ACTIVE RENDER_CORE1_ARG,
-                romLoadMs ROM_BOUNCE_ARG);
+                romLoadMs ROM_BOUNCE_ARG ROM_CACHE_TAIL_ARG);
         profileHeaderWritten = true;
     }
 
