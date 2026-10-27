@@ -316,3 +316,24 @@ startup, so the main benefit is fewer transition stalls in longer sessions.
 
 Everything else in v10 stays unchanged. Overclock and frameskip remain
 configurable, cheats remain unavailable, and diagnostic telemetry remains off.
+
+## performance-v12
+
+```sh
+gbsp/profiles/build-performance-v12.sh
+```
+
+Same mechanism and checks as v11. The profile additionally enables:
+
+- `CONFIG_GBSP_ROM_CACHE_LAZY_TAIL`: the measured 512 KB tail remains
+  allocated, but its 16 cache entries start empty. Demand faults fill those
+  entries before the replacement policy evicts any of the 192 pages loaded at
+  startup. The cache-hit path and 32 KB page size are unchanged.
+
+Measured on the target hardware at OC 0 and frameskip 0, Fire Red startup fell
+from 4443 to 4102 ms. In comparable-length windows, faults fell from 45 to 21,
+ROM I/O time from 966.0 to 451.2 ms, and the worst window from 14 to 9 faults.
+No panic, watchdog or storage error occurred.
+
+Everything else in v11 stays unchanged. Overclock and frameskip remain
+configurable, cheats remain unavailable, and diagnostic telemetry remains off.
