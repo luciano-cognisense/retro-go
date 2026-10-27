@@ -2760,6 +2760,11 @@ static s32 load_gamepak_raw(const char *name)
     u32 rom_blocks = gamepak_size >> 15;
 #ifdef CONFIG_GBSP_ROM_CACHE_512K_TAIL
     u32 pages_left = rom_blocks;
+#ifdef CONFIG_GBSP_ROM_CACHE_LAZY_TAIL
+    u32 blocks_to_load = gamepak_buffer_count;
+    if (blocks_to_load && gamepak_buffer_pages[blocks_to_load - 1] < 32)
+      blocks_to_load--;
+#endif
 #else
     u32 buf_blocks = (gamepak_size + gamepak_buffer_blocksize-1) / (gamepak_buffer_blocksize);
     u32 ldblks = buf_blocks < gamepak_buffer_count ?
@@ -2778,7 +2783,11 @@ static s32 load_gamepak_raw(const char *name)
 #endif
 
     // Proceed to read the whole ROM or as much as possible.
-#ifdef CONFIG_GBSP_ROM_CACHE_512K_TAIL
+#ifdef CONFIG_GBSP_ROM_CACHE_LAZY_TAIL
+    for (i = 0; i < blocks_to_load && pages_left; i++)
+    {
+      const u32 pages = gamepak_buffer_pages[i] < pages_left ? gamepak_buffer_pages[i] : pages_left;
+#elif defined(CONFIG_GBSP_ROM_CACHE_512K_TAIL)
     for (i = 0; i < gamepak_buffer_count && pages_left; i++)
     {
       const u32 pages = gamepak_buffer_pages[i] < pages_left ? gamepak_buffer_pages[i] : pages_left;

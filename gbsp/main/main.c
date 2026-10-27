@@ -99,6 +99,12 @@ extern int gamepak_cache_kb(void);
 #define ROM_CACHE_TAIL_FMT ""
 #define ROM_CACHE_TAIL_ARG
 #endif
+
+#ifdef CONFIG_GBSP_ROM_CACHE_LAZY_TAIL
+#define ROM_CACHE_LAZY_FMT " | rom_cache_tail_lazy 1"
+#else
+#define ROM_CACHE_LAZY_FMT ""
+#endif
 // Time load_gamepak() took at boot: reads the first cache blocks of the ROM.
 static int romLoadMs = -1;
 
@@ -628,7 +634,7 @@ static void profile_flush(void)
         fprintf(fp, "\n=== gbsp %s | %s | iwram %s | fb %s | cache de ROM %dMB"
                     " | RAM interna no boot: %dKB livre, maior bloco %dKB"
                     " | config compilada: dcache %dKB | psram %dMHz | fast_ram %d (%s) | memstats %d | compact_reads %d | sparse_regs %d | cpu_rodata_dram %d" RENDER_CORE1_FMT AUDIO_TRANSITION_FMT AUDIO_LIVE_RATE_FMT
-                    " | carga da ROM %d ms" ROM_BOUNCE_FMT ROM_CACHE_TAIL_FMT " ===\n",
+                    " | carga da ROM %d ms" ROM_BOUNCE_FMT ROM_CACHE_TAIL_FMT ROM_CACHE_LAZY_FMT " ===\n",
                 app->version ? app->version : "?",
                 app->romPath ? rg_basename(app->romPath) : "?",
                 ((u32)iwram_ptr >> 24) == 0x3c ? "PSRAM" : "interna",

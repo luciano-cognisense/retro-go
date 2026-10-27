@@ -191,6 +191,16 @@ menu "gpSP experiments"
             succeeds, taking the cache from 6144 KB to 6656 KB. In a 6-minute
             Fire Red session the observed fault rate was 22.6% below the
             previous non-identical reference, with no crash or storage error.
+    config GBSP_ROM_CACHE_LAZY_TAIL
+        bool "Leave the 512 KB ROM-cache tail empty at startup"
+        default n
+        depends on GBSP_ROM_CACHE_512K_TAIL
+        help
+            Keep the final 512 KB block as free cache entries instead of
+            reading its 16 pages during ROM startup. This removes the measured
+            startup cost of filling the tail while preserving its capacity for
+            pages demanded later. Page faults populate the free entries before
+            any loaded page is evicted.
     config GBSP_AUDIO_CLOCK_COMP
         bool "Compensate the I2S clock for the retro-go overclock (ESP32-S3)"
         default n
