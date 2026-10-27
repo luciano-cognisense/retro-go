@@ -293,3 +293,26 @@ runtime error appeared in the log.
 
 Everything else in v9 stays unchanged. Overclock and frameskip remain
 configurable, cheats remain unavailable, and diagnostic telemetry remains off.
+
+## performance-v11
+
+```sh
+gbsp/profiles/build-performance-v11.sh
+```
+
+Same mechanism and checks as v10. The profile adds only:
+
+- `CONFIG_GBSP_ROM_CACHE_512K_TAIL`: after the normal sequence of 1 MB PSRAM
+  allocations stops, the core tries one final 512 KB block. The ROM page size
+  remains 32 KB, and the cache-hit path is unchanged. The variable-block lookup
+  runs only on a page fault.
+
+Measured on the target hardware at OC 0 and frameskip 0, the allocation
+succeeded: exact cache size 6656 KB, including a 512 KB tail. A 22,803-frame
+Fire Red session completed without panic or storage errors, with 65 faults at
+21.48 ms/fault. Its fault rate was 10.26/min, 22.6% below the previous
+non-identical v10 reference. Loading the extra cache data added about 342 ms to
+startup, so the main benefit is fewer transition stalls in longer sessions.
+
+Everything else in v10 stays unchanged. Overclock and frameskip remain
+configurable, cheats remain unavailable, and diagnostic telemetry remains off.
