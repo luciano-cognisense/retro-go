@@ -271,3 +271,25 @@ boot ROM load time and the bounce buffer size (in every build, option or not).
   both collections; save/load was not checked separately.
 
 The option keeps `default n`; only this profile turns it on.
+
+## performance-v10
+
+```sh
+gbsp/profiles/build-performance-v10.sh
+```
+
+Same mechanism and checks as v9. The profile changes only:
+
+- `CONFIG_GBSP_ROM_BOUNCE_KB=16`: each 32 KB ROM-cache page is read through two
+  16 KB DMA-capable internal-buffer operations instead of four 8 KB operations.
+  SD remains at the 20 MHz default, CS behavior is unchanged, and the ROM-cache
+  replacement policy is unchanged. This costs 8 KB more dynamic internal heap
+  while a game is open; static RAM, IRAM and the CPU loop are unchanged.
+
+Measured on the target hardware at OC 0 and frameskip 0: Fire Red initial load
+4347 -> 4101 ms (-5.66%), Mario 2905 -> 2737 ms (-5.78%), and Fire Red ROM-page
+fault cost 22.800 -> 21.503 ms (-5.69%, 40 candidate faults). No storage or
+runtime error appeared in the log.
+
+Everything else in v9 stays unchanged. Overclock and frameskip remain
+configurable, cheats remain unavailable, and diagnostic telemetry remains off.
