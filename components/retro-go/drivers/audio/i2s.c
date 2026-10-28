@@ -45,6 +45,12 @@
 #define DMA_BUFFER_COUNT RG_AUDIO_DMA_BUFFER_COUNT
 #define DMA_BUFFER_LEN RG_AUDIO_DMA_BUFFER_LEN
 
+#if defined(CONFIG_RG_AUDIO_I2S_AUTO_CLEAR) && CONFIG_RG_AUDIO_I2S_AUTO_CLEAR
+#define I2S_TX_AUTO_CLEAR true
+#else
+#define I2S_TX_AUTO_CLEAR false
+#endif
+
 #if defined(CONFIG_RG_AUDIO_I2S_TELEMETRY) && CONFIG_RG_AUDIO_I2S_TELEMETRY
 #define TELEMETRY_EVENT_QUEUE_LEN 256
 static QueueHandle_t telemetry_event_queue;
@@ -115,6 +121,7 @@ static bool driver_init(int device, int sample_rate)
             .intr_alloc_flags = 0, // ESP_INTR_FLAG_LEVEL1
             .dma_buf_count = DMA_BUFFER_COUNT,
             .dma_buf_len = DMA_BUFFER_LEN,
+            .tx_desc_auto_clear = I2S_TX_AUTO_CLEAR,
         }, I2S_EVENT_QUEUE_ARGS);
         if (ret == ESP_OK)
             ret = i2s_set_dac_mode(RG_AUDIO_USE_INT_DAC);
@@ -136,6 +143,7 @@ static bool driver_init(int device, int sample_rate)
             .intr_alloc_flags = 0, // ESP_INTR_FLAG_LEVEL1
             .dma_buf_count = DMA_BUFFER_COUNT,
             .dma_buf_len = DMA_BUFFER_LEN,
+            .tx_desc_auto_clear = I2S_TX_AUTO_CLEAR,
         #if CONFIG_IDF_TARGET_ESP32
             .use_apll = true, // External DAC may care about accuracy
         #endif

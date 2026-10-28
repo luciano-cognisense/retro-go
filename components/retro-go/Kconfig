@@ -28,4 +28,13 @@ menu "Retro-Go"
             this option preserves the queued descriptors across rate changes.
             Applications must opt in. Other audio devices retain the legacy
             driver operation.
+    config RG_AUDIO_I2S_AUTO_CLEAR
+        bool "Clear empty I2S TX DMA descriptors to silence"
+        default n
+        help
+            Enables the legacy driver's tx_desc_auto_clear option. When the
+            producer cannot refill a TX descriptor in time, the completed
+            descriptor is cleared instead of replaying stale samples. This
+            replaces the repeated-buffer buzz with digital silence. Apps must
+            opt in; the default behaviour of every other core is unchanged.
 endmenu

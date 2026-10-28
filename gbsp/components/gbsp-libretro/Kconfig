@@ -254,4 +254,14 @@ menu "gpSP experiments"
             transition windows had fewer underruns and lower i2s_write time,
             and the sound was judged more natural. Other devices fall back to
             i2s_set_sample_rates().
+    config GBSP_AUDIO_UNDERRUN_SILENCE
+        bool "Output silence instead of stale samples on I2S underrun"
+        default n
+        select RG_AUDIO_I2S_AUTO_CLEAR
+        help
+            Clears a completed TX DMA descriptor before the legacy I2S driver
+            makes it available for reuse. If emulation cannot provide the next
+            block in time, the DAC receives zero-valued PCM instead of
+            repeatedly playing the previous block as a buzz. Does not alter
+            the sample-rate controller, DMA geometry or normal submissions.
 endmenu
