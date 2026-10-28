@@ -337,3 +337,29 @@ No panic, watchdog or storage error occurred.
 
 Everything else in v11 stays unchanged. Overclock and frameskip remain
 configurable, cheats remain unavailable, and diagnostic telemetry remains off.
+
+## performance-v13
+
+```sh
+gbsp/profiles/build-performance-v13.sh
+```
+
+Same mechanism and checks as v12. The profile additionally enables:
+
+- `CONFIG_GBSP_AUDIO_UNDERRUN_SILENCE`: enables the legacy I2S driver's
+  `tx_desc_auto_clear` behavior for gbsp. When emulation cannot refill a TX
+  descriptor in time, the completed descriptor is cleared to digital silence
+  instead of replaying stale samples as a buzz. It does not change the audio
+  rate controller, DMA geometry, normal submissions or CPU emulation path.
+
+Measured on the target hardware at OC 2 and frameskip 5: Mario and Fire Red
+ran without panic, watchdog or audio restart; the repeated chiado was judged
+reduced. Underruns still occur and transitions can remain perceptibly strange,
+because this option changes only what is output after an underrun, not the
+production deficit. Diagnostic transition telemetry remains disabled in the
+profile.
+
+Everything else in v12 stays unchanged. Overclock and frameskip remain
+configurable and cheats remain unavailable. This closes the performance
+campaign; subsequent work on default settings is a separate configuration
+change.
