@@ -117,6 +117,10 @@ static const char *SETTING_PROFILE = "Profile";
 static const char *SETTING_AUDIO_SYNC = "AudioSync";
 static const char *SETTING_FRAMESKIP = "Frameskip";
 
+// App-local default. Entering or leaving a core reboots the ESP32-S3, so this
+// overclock cannot carry into the launcher or another emulator.
+#define GBSP_DEFAULT_OVERCLOCK 2
+
 // -1 = leave rg_system_tick()'s automatic frameskip alone, 0..5 = pin it.
 //
 // The automatic one (rg_system.c, "Auto frameskip") moves between 1 and 5 on its
@@ -140,7 +144,9 @@ static int forcedFrameskip = -1;
 #define PROFILE_FILE RG_BASE_PATH "/gbsp-perfil.txt"
 #endif
 
-static int profileEnabled = 1;
+// Performance logging is diagnostic. Keep it available in the menu, but do not
+// write gbsp-perfil.txt for a fresh installation unless the user enables it.
+static int profileEnabled = 0;
 static bool profileHeaderWritten = false;
 // Internal RAM available right before we try to place iwram there. Logged in
 // the profile header so a failed placement says how much was missing.
@@ -1058,7 +1064,9 @@ void app_main(void)
             .options = &options_handler,
         },
     });
-    // rg_system_set_overclock(2);
+    // This call exists only in the gbsp app. A saved menu choice may change it
+    // for the current session; the next gbsp launch starts from this default.
+    rg_system_set_overclock(GBSP_DEFAULT_OVERCLOCK);
 
     sound_master_enable = rg_settings_get_number(NS_APP, SETTING_SOUND_EMULATION, true);
     autoSaveSRAM = (int)rg_settings_get_number(NS_APP, SETTING_SAVESRAM, autoSaveSRAM);
