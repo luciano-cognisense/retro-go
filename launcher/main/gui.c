@@ -17,6 +17,11 @@
 #define C_HANDS_ON_LAB_BACKGROUND 0x1149
 #define C_HANDS_ON_LAB_FOREGROUND 0xFFBD
 #define C_HANDS_ON_LAB_ACCENT     0xFC22
+#define C_HOL_PAPER              0xF79D
+#define C_HOL_INK                0x2187
+#define C_HOL_RULE               0xDEFB
+#define C_HOL_ORANGE             0xBAE4
+#define C_HOL_WHITE              0xFFFF
 
 retro_gui_t gui;
 static rg_image_t *systems_background;
@@ -24,6 +29,11 @@ static rg_image_t *button_a;
 static rg_image_t *button_b;
 static rg_image_t *carousel_images[7];
 static rg_image_t *carousel_side_images[7];
+// Keep only the current full-screen plate decoded; browsing many systems must not
+// accumulate one 320x240 RGB565 surface per console.
+static rg_image_t *pilot_image;
+static int pilot_image_index = -1;
+static rg_image_t *pilot_side_images[16];
 
 #define SETTING_SELECTED_TAB    "SelectedTab"
 #define SETTING_START_SCREEN    "StartScreen"
@@ -280,6 +290,10 @@ void gui_update_theme(void)
         rg_surface_free(tab->logo), tab->logo = NULL;
     }
     rg_surface_free(systems_background), systems_background = NULL;
+    rg_surface_free(pilot_image), pilot_image = NULL;
+    pilot_image_index = -1;
+    for (int i = 0; i < RG_COUNT(pilot_side_images); ++i)
+        rg_surface_free(pilot_side_images[i]), pilot_side_images[i] = NULL;
 }
 
 void gui_save_config(void)
@@ -416,6 +430,72 @@ void gui_scroll_list(tab_t *tab, scroll_whence_t mode, int arg)
     }
 }
 
+static void gui_draw_game_browser(tab_t *tab)
+{
+    const listbox_t *list = &tab->listbox;
+    bool has_preview = tab->preview != NULL;
+    int list_right = has_preview ? 201 : gui.width - 16;
+    char count[32];
+
+    rg_gui_draw_rect(0, 0, gui.width, gui.height, 0, 0, C_HOL_PAPER);
+    rg_gui_draw_text(16, 11, 120, "HANDS ON LAB", C_HOL_INK,
+                     C_TRANSPARENT, RG_TEXT_ALIGN_LEFT);
+    rg_gui_draw_text(175, 11, 129, tab->desc, C_HOL_ORANGE,
+                     C_TRANSPARENT, RG_TEXT_ALIGN_RIGHT);
+    rg_gui_draw_rect(16, 31, gui.width - 32, 1, 0, 0, C_HOL_RULE);
+
+    rg_gui_draw_text(16, 40, 100, tab->navpath ? tab->navpath : "JOGOS",
+                     C_HOL_INK, C_TRANSPARENT, RG_TEXT_ALIGN_LEFT);
+    snprintf(count, sizeof(count), "%d JOGOS  %d / %d", list->length,
+             list->length ? list->cursor + 1 : 0, list->length);
+    rg_gui_draw_text(gui.width - 139, 42, 123, count, C_HOL_INK,
+                     C_TRANSPARENT, RG_TEXT_ALIGN_RIGHT);
+
+    int first = gui.scroll_mode == SCROLL_MODE_PAGING
+              ? (list->cursor / 6) * 6 : list->cursor - 2;
+    first = RG_MAX(0, first);
+    for (int row = 0; row < 6; ++row)
+    {
+        int idx = first + row;
+        if (idx >= list->length) break;
+        int y = 68 + row * 22;
+        bool selected = idx == list->cursor;
+        if (selected)
+        {
+            rg_gui_draw_rect(16, y - 2, list_right - 16, 21, 1,
+                             C_HOL_RULE, C_HOL_WHITE);
+            rg_gui_draw_rect(16, y - 2, 3, 21, 0, 0, C_HOL_ORANGE);
+        }
+        rg_gui_draw_text(27, y + 2, list_right - 34,
+                         list->items[idx].text, C_HOL_INK,
+                         C_TRANSPARENT, RG_TEXT_ALIGN_LEFT);
+    }
+
+    if (has_preview)
+    {
+        rg_gui_draw_rect(205, 72, 99, 118, 1, C_HOL_RULE, C_HOL_WHITE);
+        int width = RG_MIN(tab->preview->width, 85);
+        int height = tab->preview->height * width / tab->preview->width;
+        if (height > 82)
+        {
+            height = 82;
+            width = tab->preview->width * height / tab->preview->height;
+        }
+        rg_gui_draw_image(254 - width / 2, 85 + (82 - height) / 2,
+                          width, height, true, tab->preview);
+    }
+
+    rg_gui_draw_rect(16, 211, gui.width - 32, 1, 0, 0, C_HOL_RULE);
+    if (!button_a) button_a = gui_get_image("button", "a");
+    if (!button_b) button_b = gui_get_image("button", "b");
+    if (button_a) rg_gui_draw_image(16, 218, 18, 18, false, button_a);
+    if (button_b) rg_gui_draw_image(196, 218, 18, 18, false, button_b);
+    rg_gui_draw_text(36, 220, 72, "JOGAR", C_HOL_INK,
+                     C_TRANSPARENT, RG_TEXT_ALIGN_LEFT);
+    rg_gui_draw_text(216, 220, 88, "CONSOLES", C_HOL_INK,
+                     C_TRANSPARENT, RG_TEXT_ALIGN_LEFT);
+}
+
 void gui_redraw(void)
 {
     while (rg_display_is_busy())
@@ -427,6 +507,10 @@ void gui_redraw(void)
     if (!tab)
     {
         RG_LOGW("No tab to redraw...");
+    }
+    else if (gui.browse && tab->arg)
+    {
+        gui_draw_game_browser(tab);
     }
     else if (gui.browse)
     {
@@ -444,6 +528,66 @@ void gui_redraw(void)
 
     rg_gui_set_surface(NULL);
     rg_display_submit(gui.surface, 0);
+}
+
+static int gui_pilot_index(const tab_t *tab)
+{
+    static const char *const names[] = {
+        "nes", "snes", "gb", "gbc", "gba", "gw", "sms", "gg",
+        "md", "col", "pce", "lnx", "a26", "msx", "favorite", "recent",
+    };
+    for (int i = 0; i < RG_COUNT(names); ++i)
+        if (strcmp(tab->name, names[i]) == 0)
+            return i;
+    return -1;
+}
+
+static bool gui_draw_pilot_selector(tab_t *const cards[3], const int image_types[3],
+                                    int selected, int enabled_count)
+{
+    int index = gui_pilot_index(cards[1]);
+    if (index < 0 || gui.width != 320 || gui.height != 240)
+        return false;
+
+    if (pilot_image_index != index)
+    {
+        rg_surface_free(pilot_image), pilot_image = NULL;
+        pilot_image_index = index;
+    }
+    if (!pilot_image)
+        pilot_image = gui_get_image("pilot", cards[1]->name);
+    const rg_image_t *plate = pilot_image;
+    // Keep the approved renderer as a fallback, including low-memory mode.
+    if (!plate || plate->width != 320 || plate->height != 240)
+        return false;
+    rg_gui_draw_image(0, 0, 320, 240, false, plate);
+
+    for (int card = 0; card <= 2; card += 2)
+    {
+        int side_index = gui_pilot_index(cards[card]);
+        const rg_image_t *side = carousel_side_images[image_types[card]];
+        if (side_index >= 0)
+        {
+            if (!pilot_side_images[side_index])
+                pilot_side_images[side_index] = gui_get_image("pilot_side", cards[card]->name);
+            if (pilot_side_images[side_index])
+                side = pilot_side_images[side_index];
+        }
+        if (side && side->width == 88 && side->height == 60)
+        {
+            const uint16_t *edge = (const uint16_t *)side->data + (card == 0 ? 41 : 0);
+            rg_gui_copy_buffer(card == 0 ? 0 : 273, 82, 47, 60, side->stride, edge, true);
+        }
+    }
+
+    int dots_x = (gui.width - (enabled_count * 7 - 2)) / 2;
+    for (int dot = 0; dot < enabled_count; ++dot)
+    {
+        int size = dot == selected ? 5 : 3;
+        rg_gui_draw_rect(dots_x + dot * 7, 195 + (5 - size) / 2, size, size, 0, 0,
+                         dot == selected ? 0xBAE4 : 0xDEFB);
+    }
+    return true;
 }
 
 void gui_draw_system_selector(void)
@@ -507,6 +651,9 @@ void gui_draw_system_selector(void)
         if (!carousel_side_images[type])
             carousel_side_images[type] = gui_get_image("carousel_side", image_names[type]);
     }
+
+    if (gui_draw_pilot_selector(cards, image_types, selected, enabled_count))
+        return;
 
     // Neighbor cards intentionally remain partially outside the screen: this
     // makes the horizontal navigation discoverable without animation.

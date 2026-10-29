@@ -1,0 +1,3 @@
+Dois novos estudos de Favoritos e Recentes, 320x240, na linguagem aprovada dos cards de console: fundo creme, card branco, objeto tridimensional cinza, um acento laranja e legenda de alto contraste. Favoritos usa cartuchos com estrela; Recentes usa cartuchos com relógio. Fontes geradas por ImageGen em source/. O botão A foi redesenhado com alinhamento pelo centro real da caixa do glifo, também aplicado ao gerador de previews dos consoles em ../logos/render_all.py.
+
+Cards aprovados e integrados em `themes/hands-on-lab`. As imagens do launcher são geradas com `render.py` e incluídas em `launcher/main/images.c` pelo gerador do tema.
