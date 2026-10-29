@@ -115,6 +115,7 @@ bool rg_display_is_busy(void);
 bool rg_display_is_active(void);
 void rg_display_force_redraw(void);
 void rg_display_submit(const rg_surface_t *update, uint32_t flags);
+void rg_display_set_dimmed(bool dimmed);
 // rg_display_sync syncs our internal state to the display. With ILI9341/ST7789 it's a no-op because all writes
 // are direct. With other drivers it is used to signal that the internal framebuffer should be sent to the LCD.
 void rg_display_sync(void);

@@ -432,15 +432,32 @@ void gui_scroll_list(tab_t *tab, scroll_whence_t mode, int arg)
 
 static void gui_draw_game_browser(tab_t *tab)
 {
+    static const struct { const char *key, *label; } names[] = {
+        {"nes", "NINTENDO 8-BIT"}, {"snes", "SUPER NINTENDO"},
+        {"gb", "GAME BOY"}, {"gbc", "GAME BOY COLOR"},
+        {"gba", "GAME BOY ADVANCE"}, {"gw", "GAME & WATCH"},
+        {"sms", "MASTER SYSTEM"}, {"gg", "GAME GEAR"},
+        {"md", "MEGA DRIVE"}, {"col", "COLECOVISION"},
+        {"pce", "PC ENGINE"}, {"lnx", "ATARI LYNX"},
+        {"a26", "ATARI 2600"}, {"msx", "MSX"},
+        {"doom", "DOOM"}, {"favorite", "FAVORITOS"},
+        {"recent", "RECENTES"},
+    };
     const listbox_t *list = &tab->listbox;
     bool has_preview = tab->preview != NULL;
     int list_right = has_preview ? 201 : gui.width - 16;
     char count[32];
+    const char *system_name = tab->desc;
+    for (size_t i = 0; i < RG_COUNT(names); ++i)
+        if (strcmp(tab->name, names[i].key) == 0)
+            system_name = names[i].label;
+    if (TEXT_RECT(system_name, 0).width > 154)
+        system_name = tab->name;
 
     rg_gui_draw_rect(0, 0, gui.width, gui.height, 0, 0, C_HOL_PAPER);
     rg_gui_draw_text(16, 11, 120, "HANDS ON LAB", C_HOL_INK,
                      C_TRANSPARENT, RG_TEXT_ALIGN_LEFT);
-    rg_gui_draw_text(175, 11, 129, tab->desc, C_HOL_ORANGE,
+    rg_gui_draw_text(150, 11, 154, system_name, C_HOL_ORANGE,
                      C_TRANSPARENT, RG_TEXT_ALIGN_RIGHT);
     rg_gui_draw_rect(16, 31, gui.width - 32, 1, 0, 0, C_HOL_RULE);
 

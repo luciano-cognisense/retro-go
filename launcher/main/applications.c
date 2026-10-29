@@ -560,7 +560,7 @@ static void show_file_info(retro_file_t *file)
         if (file->checksum)
             sprintf(filecrc, "%08X (%d)", (int)file->checksum, file->app->crc_offset);
 
-        switch (rg_gui_dialog(_("File properties"), options, -1))
+        switch (rg_gui_dialog(strcmp(RG_TARGET_NAME, "HANDS-ON-LAB") == 0 ? "PROPRIEDADES" : _("File properties"), options, -1))
         {
         case 3:
             application_get_file_crc32(file);
@@ -605,7 +605,8 @@ void application_show_file_menu(retro_file_t *file, bool advanced)
         RG_DIALOG_END,
     };
 
-    int sel = rg_gui_dialog(NULL, choices, has_save ? 0 : 1);
+    int sel = rg_gui_dialog(strcmp(RG_TARGET_NAME, "HANDS-ON-LAB") == 0 ? "INICIAR JOGO" : NULL,
+                            choices, has_save ? 0 : 1);
     switch (sel)
     {
     case 0:

@@ -26,6 +26,7 @@ static rg_display_t display;
 static int16_t map_viewport_to_source_x[RG_SCREEN_WIDTH + 1];
 static int16_t map_viewport_to_source_y[RG_SCREEN_HEIGHT + 1];
 static uint32_t screen_line_checksum[RG_SCREEN_HEIGHT + 1];
+static bool display_dimmed;
 
 #define LINE_IS_REPEATED(Y) (map_viewport_to_source_y[(Y)] == map_viewport_to_source_y[(Y) - 1])
 // This is to avoid flooring a number that is approximated to .9999999 and be explicit about it
@@ -115,6 +116,21 @@ static inline unsigned blend_pixels(unsigned a, unsigned b)
 #endif
     // This is my attempt at averaging two 565BE values without swapping bytes (3x the speed of the code above)
     // return (((a ^ b) & 0b1101111011110110U) >> 1) + (a & b);
+}
+
+static inline uint16_t dim_pixel(uint16_t color)
+{
+#if RG_SCREEN_PIXEL_FORMAT == 0 /* 565_BE */
+    color = (color << 8) | (color >> 8);
+#endif
+    unsigned r = ((color >> 11) & 31) * 3 / 4;
+    unsigned g = ((color >> 5) & 63) * 3 / 4;
+    unsigned b = (color & 31) * 3 / 4;
+    color = (r << 11) | (g << 5) | b;
+#if RG_SCREEN_PIXEL_FORMAT == 0 /* 565_BE */
+    color = (color << 8) | (color >> 8);
+#endif
+    return color;
 }
 
 static inline void write_update(const rg_surface_t *update)
@@ -270,6 +286,12 @@ static inline void write_update(const rg_surface_t *update)
                     }
                 }
             }
+        }
+
+        if (display_dimmed && need_update)
+        {
+            for (int i = 0; i < lines_to_copy * draw_width; ++i)
+                line_buffer[i] = dim_pixel(line_buffer[i]);
         }
 
 #if LCD_ACCESS_MODE == 0
@@ -429,6 +451,17 @@ static void display_task(void *arg)
         lcd_sync();
         DISPLAY_ACTIVITY_COMPLETED(); // only now: see rg_display_activity.h
     }
+}
+
+void rg_display_set_dimmed(bool dimmed)
+{
+    if (display_dimmed == dimmed)
+        return;
+
+    while (rg_display_is_busy())
+        rg_task_yield();
+    display_dimmed = dimmed;
+    memset(screen_line_checksum, 0, sizeof(screen_line_checksum));
 }
 
 void rg_display_force_redraw(void)

@@ -9,6 +9,7 @@
 #include <time.h>
 
 #include "bitmaps/image_hourglass.h"
+#include "bitmaps/hol_buttons.h"
 #include "fonts/fonts.h"
 
 static struct
@@ -672,9 +673,105 @@ static size_t get_dialog_items_count(const rg_gui_option_t *options)
     return opt - options;
 }
 
+static bool hol_main_dialog(const char *title)
+{
+    return strcmp(RG_TARGET_NAME, "HANDS-ON-LAB") == 0 && title &&
+           (strcmp(title, "MENU") == 0 || strcmp(title, "OPÇÕES") == 0 ||
+            strcmp(title, "INICIAR JOGO") == 0 || strcmp(title, "RETOMAR") == 0 ||
+            strcmp(title, "SALVAR") == 0 || strcmp(title, "CARREGAR") == 0 ||
+            strcmp(title, "APAGAR SAVE") == 0);
+}
+
+static rg_rect_t rg_gui_draw_hol_dialog(const char *title, const rg_gui_option_t *options,
+                                        size_t options_count, int sel)
+{
+    const rg_color_t paper = 0xF79D, ink = 0x2187, rule = 0xDEFB;
+    const rg_color_t accent = 0xBAE4, white = 0xFFFF, muted = 0x638F;
+    bool menu = strcmp(title, "MENU") == 0;
+    bool launch = strcmp(title, "INICIAR JOGO") == 0;
+    bool slots = strcmp(title, "RETOMAR") == 0 || strcmp(title, "SALVAR") == 0 ||
+                 strcmp(title, "CARREGAR") == 0 || strcmp(title, "APAGAR SAVE") == 0;
+    int x = menu || launch || slots ? 36 : 31;
+    int y = launch || slots ? 25 : (menu ? 18 : 13);
+    int width = menu || launch || slots ? 248 : 258;
+    int height = launch || slots ? 190 : (menu ? 204 : 214);
+    int rows = menu ? 6 : (launch ? 5 : (slots ? 4 : 7));
+    int visible[options_count + 1];
+    int count = 0, selected_row = 0;
+    for (size_t i = 0; i < options_count; ++i)
+    {
+        int mode = options[i].flags & RG_DIALOG_FLAG_MODE_MASK;
+        if (mode == RG_DIALOG_FLAG_HIDDEN || mode == RG_DIALOG_FLAG_SKIP)
+            continue;
+        if ((int)i == sel)
+            selected_row = count;
+        visible[count++] = i;
+    }
+    int first = RG_MAX(0, selected_row - 2);
+    first = RG_MIN(first, RG_MAX(0, count - rows));
+
+    // The game frame remains visible around the modal.
+    rg_gui_draw_rect(x + 2, y + 3, width, height, 0, 0, ink);
+    rg_gui_draw_rect(x, y, width, height, 1, rule, paper);
+    rg_gui_draw_text(x + 14, y + 8, 100, "HANDS ON LAB", ink,
+                     paper, RG_TEXT_ALIGN_LEFT);
+    rg_gui_draw_text(x + width - 134, y + 9, 120,
+                     menu ? "JOGO PAUSADO" : (launch ? "SELEÇÃO DE JOGO" :
+                     (slots ? "ESTADOS SALVOS" : "AJUSTES DO JOGO")), accent,
+                     paper, RG_TEXT_ALIGN_RIGHT);
+    rg_gui_draw_rect(x + 14, y + 27, width - 28, 1, 0, 0, rule);
+    rg_gui_draw_text(x + 14, y + 33, width - 28, title, ink,
+                     paper, RG_TEXT_ALIGN_LEFT);
+
+    for (int row = 0; row < rows && first + row < count; ++row)
+    {
+        int index = visible[first + row];
+        int top = y + 60 + row * 18;
+        bool selected = index == sel;
+        if (selected)
+        {
+            rg_gui_draw_rect(x + 14, top - 2, width - 28, 18, 1, rule, white);
+            rg_gui_draw_rect(x + 14, top - 2, 3, 18, 0, 0, accent);
+        }
+        rg_color_t color = options[index].flags == RG_DIALOG_FLAG_DISABLED ? muted : ink;
+        int label_width = options[index].value ? width - 132 : width - 50;
+        rg_gui_draw_text(x + 25, top, label_width, options[index].label,
+                         color, selected ? white : paper, RG_TEXT_ALIGN_LEFT);
+        if (options[index].value)
+            rg_gui_draw_text(x + width - 122, top, 98, options[index].value,
+                             selected ? ink : muted, selected ? white : paper, RG_TEXT_ALIGN_RIGHT);
+    }
+    if (first > 0)
+        rg_gui_draw_text(x + width - 24, y + 48, 12, "^", accent,
+                         paper, RG_TEXT_ALIGN_CENTER);
+    if (first + rows < count)
+        rg_gui_draw_text(x + width - 24, y + height - 46, 12, "v", accent,
+                         paper, RG_TEXT_ALIGN_CENTER);
+
+    rg_gui_draw_rect(x + 14, y + height - 30, width - 28, 1, 0, 0, rule);
+    rg_gui_copy_buffer(x + 14, y + height - 26, 18, 18, 36, hol_button_a, false);
+    rg_gui_copy_buffer(x + width - 100, y + height - 26, 18, 18, 36, hol_button_b, false);
+    rg_gui_draw_text(x + 34, y + height - 23, 92, "SELECIONAR", ink,
+                     paper, RG_TEXT_ALIGN_LEFT);
+    rg_gui_draw_text(x + width - 80, y + height - 23, 66, "VOLTAR", ink,
+                     paper, RG_TEXT_ALIGN_LEFT);
+    return (rg_rect_t){x, y, width, height};
+}
+
 rg_rect_t rg_gui_draw_dialog(const char *title, const rg_gui_option_t *options, size_t options_count, int sel) // const rg_rect_t *rect,
 {
     RG_ASSERT_ARG(options || options_count == 0);
+
+    if (hol_main_dialog(title))
+        return rg_gui_draw_hol_dialog(title, options, options_count, sel);
+
+    bool hol_properties = strcmp(RG_TARGET_NAME, "HANDS-ON-LAB") == 0 &&
+                          title && strcmp(title, "PROPRIEDADES") == 0;
+    rg_color_t box_bg = hol_properties ? 0xF79D : gui.style.box_background;
+    rg_color_t box_fg = hol_properties ? 0x2187 : gui.style.box_header;
+    rg_color_t box_border = hol_properties ? 0xDEFB : gui.style.box_border;
+    rg_color_t selected_bg = hol_properties ? 0xFFFF : 0;
+    rg_color_t accent = hol_properties ? 0xBAE4 : gui.style.scrollbar;
 
     const int sep_width = TEXT_RECT(": ", 0).width;
     const int font_height = gui.font_height;
@@ -726,6 +823,8 @@ rg_rect_t rg_gui_draw_dialog(const char *title, const rg_gui_option_t *options, 
         inner_width = RG_MAX(inner_width, col1_width + col2_width + sep_width);
 
     inner_width = RG_MIN(inner_width, max_box_width);
+    if (hol_properties)
+        inner_width = RG_MAX(inner_width, 210);
     col2_width = inner_width - col1_width - sep_width;
     box_width += inner_width + row_padding_x * 2;
     box_height = RG_MIN(box_height, max_box_height);
@@ -738,8 +837,8 @@ rg_rect_t rg_gui_draw_dialog(const char *title, const rg_gui_option_t *options, 
     if (title)
     {
         int width = inner_width + row_padding_x * 2;
-        rg_gui_draw_text(x, y, width, title, gui.style.box_header, gui.style.box_background, RG_TEXT_ALIGN_CENTER);
-        rg_gui_draw_rect(x, y + font_height, width, 6, 0, 0, gui.style.box_background);
+        rg_gui_draw_text(x, y, width, title, box_fg, box_bg, RG_TEXT_ALIGN_CENTER);
+        rg_gui_draw_rect(x, y + font_height, width, 6, 0, 0, box_bg);
         y += font_height + 6;
     }
 
@@ -767,15 +866,15 @@ rg_rect_t rg_gui_draw_dialog(const char *title, const rg_gui_option_t *options, 
         int height = 8;
 
         if (options[i].flags == RG_DIALOG_FLAG_NORMAL)
-            color = gui.style.item_standard;
+            color = hol_properties ? 0x2187 : gui.style.item_standard;
         else if (options[i].flags == RG_DIALOG_FLAG_MESSAGE)
-            color = gui.style.item_message;
+            color = hol_properties ? 0x638F : gui.style.item_message;
         else
-            color = gui.style.item_disabled;
+            color = hol_properties ? 0x638F : gui.style.item_disabled;
 
         bool highlight = (options[i].flags & RG_DIALOG_FLAG_MODE_MASK) != RG_DIALOG_FLAG_SKIP && i == sel;
-        fg = highlight ? gui.style.box_background : color;
-        bg = highlight ? color : gui.style.box_background;
+        fg = hol_properties ? color : (highlight ? box_bg : color);
+        bg = hol_properties ? (highlight ? selected_bg : box_bg) : (highlight ? color : box_bg);
 
         if (y + row_height[i] >= box_y + box_height)
             break;
@@ -806,18 +905,20 @@ rg_rect_t rg_gui_draw_dialog(const char *title, const rg_gui_option_t *options, 
         rg_gui_draw_rect(xx + inner_width, yy, row_padding_x, height, 0, 0, bg);
         rg_gui_draw_rect(x, y, inner_width + row_padding_x * 2, row_padding_y, 0, 0, bg);
         rg_gui_draw_rect(x, yy + height, inner_width + row_padding_x * 2, row_padding_y, 0, 0, bg);
+        if (hol_properties && highlight)
+            rg_gui_draw_rect(x + 1, yy, 3, height, 0, 0, accent);
 
         y += height + row_padding_y * 2;
     }
 
     if (y < (box_y + box_height))
     {
-        rg_gui_draw_rect(box_x, y, box_width, (box_y + box_height) - y, 0, 0, gui.style.box_background);
+        rg_gui_draw_rect(box_x, y, box_width, (box_y + box_height) - y, 0, 0, box_bg);
     }
 
     // Draw box border
-    rg_gui_draw_rect(box_x, box_y, box_width, box_height, box_padding, gui.style.box_background, C_NONE);
-    rg_gui_draw_rect(box_x - 1, box_y - 1, box_width + 2, box_height + 2, 1, gui.style.box_border, C_NONE);
+    rg_gui_draw_rect(box_x, box_y, box_width, box_height, box_padding, box_bg, C_NONE);
+    rg_gui_draw_rect(box_x - 1, box_y - 1, box_width + 2, box_height + 2, 1, box_border, C_NONE);
 
     // Draw box shadow
     // rg_gui_draw_rect(box_x + box_width + 4, box_y + box_height, box_width, 4, 0, C_NONE, gui.style.shadow); // Bottom
@@ -828,17 +929,17 @@ rg_rect_t rg_gui_draw_dialog(const char *title, const rg_gui_option_t *options, 
     {
         int x = box_x + box_width - 10;
         int y = box_y + box_padding + 2;
-        rg_gui_draw_rect(x + 0, y - 0, 6, 2, 0, 0, gui.style.scrollbar);
-        rg_gui_draw_rect(x + 1, y - 2, 4, 2, 0, 0, gui.style.scrollbar);
-        rg_gui_draw_rect(x + 2, y - 4, 2, 2, 0, 0, gui.style.scrollbar);
+        rg_gui_draw_rect(x + 0, y - 0, 6, 2, 0, 0, accent);
+        rg_gui_draw_rect(x + 1, y - 2, 4, 2, 0, 0, accent);
+        rg_gui_draw_rect(x + 2, y - 4, 2, 2, 0, 0, accent);
     }
     if (list_end_i + 1 < options_count)
     {
         int x = box_x + box_width - 10;
         int y = box_y + box_height - 6;
-        rg_gui_draw_rect(x + 0, y - 4, 6, 2, 0, 0, gui.style.scrollbar);
-        rg_gui_draw_rect(x + 1, y - 2, 4, 2, 0, 0, gui.style.scrollbar);
-        rg_gui_draw_rect(x + 2, y - 0, 2, 2, 0, 0, gui.style.scrollbar);
+        rg_gui_draw_rect(x + 0, y - 4, 6, 2, 0, 0, accent);
+        rg_gui_draw_rect(x + 1, y - 2, 4, 2, 0, 0, accent);
+        rg_gui_draw_rect(x + 2, y - 0, 2, 2, 0, 0, accent);
     }
 
     return (rg_rect_t){box_x, box_y, box_width, box_height};
@@ -908,6 +1009,11 @@ intptr_t rg_gui_dialog(const char *title, const rg_gui_option_t *options_const, 
     int sel = RG_MIN(RG_MAX(0, selected_index), options_count - 1);
     int sel_old = -1;
 
+    if (strcmp(RG_TARGET_NAME, "HANDS-ON-LAB") == 0)
+    {
+        rg_display_set_dimmed(true);
+        rg_display_force_redraw();
+    }
     rg_gui_draw_status_bars();
     rg_gui_draw_dialog(title, options, options_count, sel);
     rg_input_wait_for_key(RG_KEY_ALL, false, 1000);
@@ -1006,6 +1112,8 @@ intptr_t rg_gui_dialog(const char *title, const rg_gui_option_t *options_const, 
     }
 
     rg_input_wait_for_key(joystick, false, 1000);
+    if (strcmp(RG_TARGET_NAME, "HANDS-ON-LAB") == 0)
+        rg_display_set_dimmed(false);
     rg_display_force_redraw();
     // free(shadow_options);
     free(shadow_text_buffer);
@@ -2082,7 +2190,7 @@ void rg_gui_options_menu(void)
 
     rg_audio_set_mute(true);
 
-    rg_gui_dialog(_("Options"), options, 0);
+    rg_gui_dialog(strcmp(RG_TARGET_NAME, "HANDS-ON-LAB") == 0 ? "OPÇÕES" : _("Options"), options, 0);
     rg_settings_commit();
 
     rg_audio_set_mute(false);
@@ -2255,7 +2363,8 @@ static rg_gui_event_t slot_select_cb(rg_gui_option_t *option, rg_gui_event_t eve
     if (event == RG_DIALOG_FOCUS_GAINED)
     {
         rg_image_t *preview = NULL;
-        rg_color_t color = C_BLUE;
+        bool hol = strcmp(RG_TARGET_NAME, "HANDS-ON-LAB") == 0;
+        rg_color_t color = hol ? 0xBAE4 : C_BLUE;
         size_t margin = 0; // TEXT_RECT("ABC", 0).height;
         size_t border = 3;
         char buffer[100];
@@ -2270,12 +2379,21 @@ static rg_gui_event_t slot_select_cb(rg_gui_option_t *option, rg_gui_event_t eve
         else
         {
             snprintf(buffer, sizeof(buffer), "Slot %d is empty", slot->id);
-            color = C_RED;
+            color = hol ? 0xBAE4 : C_RED;
         }
-        rg_gui_draw_image(0, margin, gui.screen_width, gui.screen_height - margin * 2, true, preview);
+        if (hol && !preview)
+            rg_gui_draw_rect(0, margin, gui.screen_width, gui.screen_height - margin * 2,
+                             0, 0, 0xF79D);
+        else
+            rg_gui_draw_image(0, margin, gui.screen_width, gui.screen_height - margin * 2, true, preview);
         rg_gui_draw_rect(0, margin, gui.screen_width, gui.screen_height - margin * 2, border, color, C_NONE);
-        rg_gui_draw_rect(border, margin + border, gui.screen_width - border * 2, gui.font_height * 2 + 6, 0, C_BLACK, C_BLACK);
-        rg_gui_draw_text(border + 60, margin + border + 5, gui.screen_width - border * 2 - 120, buffer, C_WHITE, C_BLACK, RG_TEXT_ALIGN_CENTER|RG_TEXT_BIGGER|RG_TEXT_NO_PADDING);
+        rg_color_t header_bg = hol ? 0xF79D : C_BLACK;
+        rg_gui_draw_rect(border, margin + border, gui.screen_width - border * 2,
+                         gui.font_height * 2 + 6, 0, header_bg, header_bg);
+        rg_gui_draw_text(border + 60, margin + border + 5,
+                         gui.screen_width - border * 2 - 120, buffer,
+                         hol ? 0x2187 : C_WHITE, header_bg,
+                         RG_TEXT_ALIGN_CENTER|RG_TEXT_BIGGER|RG_TEXT_NO_PADDING);
         rg_surface_free(preview);
     }
     else if (event == RG_DIALOG_ENTER)
@@ -2297,7 +2415,15 @@ int rg_gui_savestate_menu(const char *title, const char *rom_path)
         RG_DIALOG_END
     };
 
-    intptr_t ret = rg_gui_dialog(title, choices, savestates->lastused ? savestates->lastused->id : 0);
+    const char *dialog_title = title;
+    if (strcmp(RG_TARGET_NAME, "HANDS-ON-LAB") == 0)
+    {
+        if (strcmp(title, _("Resume")) == 0) dialog_title = "RETOMAR";
+        else if (strcmp(title, _("Save")) == 0) dialog_title = "SALVAR";
+        else if (strcmp(title, _("Load")) == 0) dialog_title = "CARREGAR";
+        else if (strcmp(title, _("Delete save?")) == 0) dialog_title = "APAGAR SAVE";
+    }
+    intptr_t ret = rg_gui_dialog(dialog_title, choices, savestates->lastused ? savestates->lastused->id : 0);
     int slot = (ret == RG_DIALOG_CANCELLED) ? -1 : ((rg_emu_slot_t *)ret)->id;
     free(savestates);
     return slot;
@@ -2324,7 +2450,7 @@ void rg_gui_game_menu(void)
 
     rg_audio_set_mute(true);
 
-    sel = rg_gui_dialog("Retro-Go", choices, 0);
+    sel = rg_gui_dialog(strcmp(RG_TARGET_NAME, "HANDS-ON-LAB") == 0 ? "MENU" : "Retro-Go", choices, 0);
 
     if (sel == 3000)
     {
